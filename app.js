@@ -143,14 +143,17 @@ function createColorGridCell(gridIdx, index) {
 // 切换 4 式模式显示
 function toggleMode4Display() {
     const colorGridsContainer = document.getElementById('colorGridsContainer');
+    const singleModeActions = document.getElementById('singleModeActions');
     
     if (state.mode4) {
         colorGridsContainer.style.display = 'block';
+        singleModeActions.style.display = 'none';
         // 清除主输入的颜色状态
         state.currentStates = Array(state.length).fill('x');
         renderInputGrid();
     } else {
         colorGridsContainer.style.display = 'none';
+        singleModeActions.style.display = 'flex';
     }
 }
 
@@ -228,6 +231,39 @@ function updateFocus() {
 }
 
 // 键盘输入处理
+// 检查是否需要自动应用已解决的模式
+function checkAndAutoApplySolved() {
+    const currentGuess = state.currentInput.join('');
+    if (currentGuess.length !== state.length) return;
+    
+    // 查找历史中已解决的猜测
+    const solvedGuesses = state.guesses.filter(g => g.solved);
+    
+    for (const solved of solvedGuesses) {
+        if (solved.guess === currentGuess) {
+            if (state.mode4 && solved.is4Mode) {
+                // 4式模式：自动应用全绿的目标
+                const patterns = solved.patterns;
+                patterns.forEach((p, idx) => {
+                    if (typeof p === 'string' && p.split('').every(c => c === 'g')) {
+                        state.colorGrids[idx] = Array(state.length).fill('g');
+                    }
+                });
+                render4ModeGrids();
+                showStatus('✓ 已自动应用已解决的颜色', 'info');
+            } else if (!state.mode4 && !solved.is4Mode) {
+                // 单式模式
+                if (typeof solved.patterns === 'string' && solved.patterns.split('').every(c => c === 'g')) {
+                    state.currentStates = Array(state.length).fill('g');
+                    renderInputGrid();
+                    showStatus('✓ 已自动应用已解决的颜色', 'info');
+                }
+            }
+            break;
+        }
+    }
+}
+
 document.addEventListener('keydown', (e) => {
     // 如果焦点在输入框上，跳过
     if (e.target.tagName === 'INPUT') return;
@@ -248,6 +284,9 @@ document.addEventListener('keydown', (e) => {
         if (state.focusedIndex < state.length - 1) {
             state.focusedIndex++;
             updateFocus();
+        } else {
+            // 输入完成，检查是否需要自动应用
+            checkAndAutoApplySolved();
         }
     }
     
@@ -301,12 +340,40 @@ document.addEventListener('paste', (e) => {
     state.focusedIndex = Math.min(idx, state.length - 1);
     renderInputGrid();
     if (state.mode4) render4ModeGrids();
+    
+    // 检查是否需要自动应用
+    checkAndAutoApplySolved();
 });
 
 // 事件监听器
 function initializeEventListeners() {
     // 添加猜测
     document.getElementById('addGuess').addEventListener('click', addCurrentGuess);
+    
+    // 单式模式：全绿按钮
+    document.getElementById('setAllGreen').addEventListener('click', () => {
+        if (state.currentInput.join('').length === state.length) {
+            state.currentStates = Array(state.length).fill('g');
+            renderInputGrid();
+            showStatus('已设置为全绿', 'success');
+        } else {
+            showStatus('请先输入完整的等式', 'warning');
+        }
+    });
+    
+    // 4式模式：全绿按钮
+    document.querySelectorAll('.set-all-green-4').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetIdx = parseInt(btn.dataset.target);
+            if (state.currentInput.join('').length === state.length) {
+                state.colorGrids[targetIdx] = Array(state.length).fill('g');
+                render4ModeGrids();
+                showStatus(`目标 ${targetIdx + 1} 已设置为全绿`, 'success');
+            } else {
+                showStatus('请先输入完整的等式', 'warning');
+            }
+        });
+    });
     
     // 清空当前输入
     document.getElementById('clearCurrent').addEventListener('click', () => {
@@ -376,6 +443,24 @@ function addCurrentGuess() {
         patterns = state.currentStates.map(s => s || 'x').join('');
     }
     
+    // 检测是否有全绿的模式（已解决）
+    const hasAllGreen = state.mode4 
+        ? patterns.some(p => p.split('').every(c => c === 'g'))
+        : patterns.split('').every(c => c === 'g');
+    
+    if (hasAllGreen) {
+        // 如果有全绿，直接添加并标记为已解决
+        state.guesses.push({
+            guess,
+            patterns,
+            is4Mode: state.mode4,
+            solved: true
+        });
+        renderHistory();
+        showStatus('✓ 已添加已解决的猜测（全绿）', 'success');
+        return;
+    }
+    
     // 检查颜色反馈是否与已有约束矛盾
     if (state.guesses.length > 0) {
         // 构建已有约束
@@ -400,6 +485,7 @@ function addCurrentGuess() {
     showStatus('已添加猜测', 'success');
 }
 
+// 自动应用已解决的模式（全绿）
 // 渲染历史记录
 function renderHistory() {
     const container = document.getElementById('historyList');
@@ -418,6 +504,19 @@ function renderHistory() {
         const guessText = document.createElement('span');
         guessText.className = 'guess-text';
         guessText.textContent = item.guess;
+        
+        // 如果是已解决的，添加标记
+        if (item.solved) {
+            const solvedBadge = document.createElement('span');
+            solvedBadge.className = 'solved-badge';
+            solvedBadge.textContent = '✓ 已解决';
+            solvedBadge.style.marginLeft = '8px';
+            solvedBadge.style.color = 'var(--color-green)';
+            solvedBadge.style.fontWeight = 'bold';
+            solvedBadge.style.fontSize = '0.9em';
+            guessText.appendChild(solvedBadge);
+        }
+        
         div.appendChild(guessText);
         
         if (item.is4Mode) {

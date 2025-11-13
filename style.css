@@ -163,25 +163,45 @@ h2 {
 
 .color-grid {
     margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .color-grid label {
-    display: block;
     font-weight: 600;
-    margin-bottom: 8px;
     color: var(--color-text-light);
+    min-width: 60px;
 }
 
 .color-grid .grid-cells {
     display: flex;
     gap: 4px;
     flex-wrap: wrap;
+    flex: 1;
 }
 
 .color-grid .input-cell {
     width: 40px;
     height: 40px;
     font-size: 1.2rem;
+}
+
+/* 快捷操作按钮 */
+.quick-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+}
+
+.set-all-green-4 {
+    flex-shrink: 0;
 }
 
 /* 按钮 */
