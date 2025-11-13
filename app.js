@@ -335,6 +335,17 @@ function initializeEventListeners() {
         renderHistory();
     });
     
+    // 删除最新猜测
+    document.getElementById('deleteLastGuess').addEventListener('click', () => {
+        if (state.guesses.length > 0) {
+            state.guesses.pop();
+            renderHistory();
+            showStatus('已删除最新猜测', 'success');
+        } else {
+            showStatus('没有可删除的猜测', 'warning');
+        }
+    });
+    
     // 搜索
     document.getElementById('startSearch').addEventListener('click', startSearch);
     document.getElementById('cancelSearch').addEventListener('click', cancelSearch);
@@ -371,6 +382,20 @@ function addCurrentGuess() {
         patterns = state.currentStates.map(s => s || 'x').join('');
     }
     
+    // 检查颜色反馈是否与已有约束矛盾
+    if (state.guesses.length > 0) {
+        // 构建已有约束
+        const existingConstraints = buildConstraintsFromGuesses(state.guesses, state.length);
+        
+        // 检查一致性
+        const checkResult = checkPatternConsistency(guess, patterns, existingConstraints);
+        
+        if (!checkResult.valid) {
+            showStatus('约束冲突: ' + checkResult.error, 'error');
+            return;
+        }
+    }
+    
     state.guesses.push({
         guess,
         patterns,
@@ -402,16 +427,49 @@ function renderHistory() {
         div.appendChild(guessText);
         
         if (item.is4Mode) {
-            // 4 式模式：显示 4 组颜色
-            for (let i = 0; i < 4; i++) {
-                const label = document.createElement('span');
-                label.className = 'pattern-label';
-                label.textContent = `目标${i+1}:`;
-                div.appendChild(label);
-                
-                const patternDiv = createPatternDisplay(item.patterns[i]);
-                div.appendChild(patternDiv);
-            }
+            // 4 式模式：显示 4 组颜色，分两行
+            const patterns4Mode = document.createElement('div');
+            patterns4Mode.className = 'patterns-4mode';
+            
+            // 第一行：目标1 和 目标2
+            const row1 = document.createElement('div');
+            row1.className = 'patterns-row';
+            
+            const label1 = document.createElement('span');
+            label1.className = 'pattern-label';
+            label1.textContent = '目标1:';
+            row1.appendChild(label1);
+            row1.appendChild(createPatternDisplay(item.patterns[0]));
+            
+            const label2 = document.createElement('span');
+            label2.className = 'pattern-label';
+            label2.textContent = '目标2:';
+            label2.style.marginLeft = '10px';
+            row1.appendChild(label2);
+            row1.appendChild(createPatternDisplay(item.patterns[1]));
+            
+            patterns4Mode.appendChild(row1);
+            
+            // 第二行：目标3 和 目标4
+            const row2 = document.createElement('div');
+            row2.className = 'patterns-row';
+            
+            const label3 = document.createElement('span');
+            label3.className = 'pattern-label';
+            label3.textContent = '目标3:';
+            row2.appendChild(label3);
+            row2.appendChild(createPatternDisplay(item.patterns[2]));
+            
+            const label4 = document.createElement('span');
+            label4.className = 'pattern-label';
+            label4.textContent = '目标4:';
+            label4.style.marginLeft = '10px';
+            row2.appendChild(label4);
+            row2.appendChild(createPatternDisplay(item.patterns[3]));
+            
+            patterns4Mode.appendChild(row2);
+            
+            div.appendChild(patterns4Mode);
         } else {
             // 单式模式
             const patternDiv = createPatternDisplay(item.patterns);

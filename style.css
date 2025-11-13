@@ -283,6 +283,18 @@ h2 {
     margin-right: 5px;
 }
 
+.history-item .patterns-4mode {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.history-item .patterns-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 /* 状态栏 */
 .status-bar {
     margin-top: 15px;

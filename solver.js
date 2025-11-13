@@ -54,6 +54,93 @@ function isValidEquation(expr) {
 }
 
 /**
+ * 检查新的颜色反馈是否与已有约束矛盾
+ * @param {string} guess - 猜测字符串
+ * @param {string|Array} patterns - 颜色模式（单式为字符串，4式为数组）
+ * @param {Object} existingConstraints - 已有约束
+ * @returns {Object} {valid: boolean, error: string}
+ */
+function checkPatternConsistency(guess, patterns, existingConstraints) {
+    // 如果是数组（4式模式），只检查第一个（或可以全检查）
+    const pattern = Array.isArray(patterns) ? patterns[0] : patterns;
+    
+    if (!pattern || pattern.length !== guess.length) {
+        return { valid: false, error: '颜色模式长度不匹配' };
+    }
+    
+    // 检查每个位置
+    for (let i = 0; i < guess.length; i++) {
+        const ch = guess[i];
+        const color = pattern[i];
+        
+        // 检查绿色位置冲突
+        if (existingConstraints.greens[i]) {
+            if (existingConstraints.greens[i] !== ch) {
+                // 如果该位置已经固定为其他字符，当前猜测不应该在这个位置
+                if (color === 'g') {
+                    return { 
+                        valid: false, 
+                        error: `位置 ${i+1} 已固定为 '${existingConstraints.greens[i]}'，但标记 '${ch}' 为绿色` 
+                    };
+                }
+            } else {
+                // 如果该位置已经固定为该字符，必须是绿色
+                if (color !== 'g') {
+                    return { 
+                        valid: false, 
+                        error: `位置 ${i+1} 已固定为 '${ch}'，应标记为绿色` 
+                    };
+                }
+            }
+        }
+        
+        // 检查字符是否在排除列表中
+        if (existingConstraints.excluded.has(ch)) {
+            if (color === 'g' || color === 'y') {
+                return { 
+                    valid: false, 
+                    error: `字符 '${ch}' 已被排除，不应标记为绿色或黄色` 
+                };
+            }
+        }
+        
+        // 检查黄色禁止位置
+        if (existingConstraints.yellowForbiddenPositions[ch]?.has(i)) {
+            if (color === 'y' || color === 'g') {
+                return { 
+                    valid: false, 
+                    error: `字符 '${ch}' 在位置 ${i+1} 已被禁止，不应标记为黄色或绿色` 
+                };
+            }
+        }
+    }
+    
+    // 检查字符出现次数是否超过上限
+    const charCounts = {};
+    for (let i = 0; i < guess.length; i++) {
+        const ch = guess[i];
+        const color = pattern[i];
+        
+        if (color === 'g' || color === 'y') {
+            charCounts[ch] = (charCounts[ch] || 0) + 1;
+        }
+    }
+    
+    for (const [ch, count] of Object.entries(charCounts)) {
+        if (existingConstraints.maxCounts[ch] !== undefined) {
+            if (count > existingConstraints.maxCounts[ch]) {
+                return { 
+                    valid: false, 
+                    error: `字符 '${ch}' 标记为绿/黄的次数 (${count}) 超过已知上限 (${existingConstraints.maxCounts[ch]})` 
+                };
+            }
+        }
+    }
+    
+    return { valid: true };
+}
+
+/**
  * 从猜测历史构建约束对象
  * @param {Array} guesses - 猜测历史 [{guess, patterns}]
  * @param {number} length - 等式长度
