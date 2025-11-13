@@ -7,8 +7,8 @@ const state = {
     timeout: 2000,
     mode4: false,
     currentInput: [],           // 字符数组
-    currentStates: [],          // 单式模式：颜色状态数组
-    colorGrids: [[], [], [], []], // 4式模式：4组颜色状态
+    currentStates: [],          // 单式模式：颜色状态数组（默认 'x'）
+    colorGrids: [[], [], [], []], // 4式模式：4组颜色状态（默认 'x'）
     guesses: [],                // 历史记录
     focusedIndex: 0,
     cancelledRef: { value: false }
@@ -57,12 +57,12 @@ function initializeInputGrid() {
     container.innerHTML = '';
     
     state.currentInput = Array(state.length).fill('');
-    state.currentStates = Array(state.length).fill('');
+    state.currentStates = Array(state.length).fill('x');
     state.colorGrids = [
-        Array(state.length).fill(''),
-        Array(state.length).fill(''),
-        Array(state.length).fill(''),
-        Array(state.length).fill('')
+        Array(state.length).fill('x'),
+        Array(state.length).fill('x'),
+        Array(state.length).fill('x'),
+        Array(state.length).fill('x')
     ];
     state.focusedIndex = 0;
     
@@ -153,7 +153,7 @@ function toggleMode4Display() {
     if (state.mode4) {
         colorGridsContainer.style.display = 'block';
         // 清除主输入的颜色状态
-        state.currentStates = Array(state.length).fill('');
+        state.currentStates = Array(state.length).fill('x');
         renderInputGrid();
     } else {
         colorGridsContainer.style.display = 'none';
@@ -162,8 +162,8 @@ function toggleMode4Display() {
 
 // 颜色循环（单式模式）
 function cycleColor(index, reverse = false) {
-    const states = ['', 'x', 'y', 'g'];
-    const currentState = state.currentStates[index] || '';
+    const states = ['x', 'y', 'g'];
+    const currentState = state.currentStates[index] || 'x';
     let currentIdx = states.indexOf(currentState);
     
     if (reverse) {
@@ -178,8 +178,8 @@ function cycleColor(index, reverse = false) {
 
 // 4 式模式颜色循环
 function cycle4ModeColor(gridIdx, index, reverse = false) {
-    const states = ['', 'x', 'y', 'g'];
-    const currentState = state.colorGrids[gridIdx][index] || '';
+    const states = ['x', 'y', 'g'];
+    const currentState = state.colorGrids[gridIdx][index] || 'x';
     let currentIdx = states.indexOf(currentState);
     
     if (reverse) {
@@ -202,8 +202,9 @@ function renderInputGrid() {
         
         // 应用颜色状态（仅单式模式）
         cell.className = 'input-cell';
-        if (!state.mode4 && state.currentStates[i]) {
-            cell.classList.add(`state-${state.currentStates[i]}`);
+        if (!state.mode4) {
+            const colorState = state.currentStates[i] || 'x';
+            cell.classList.add(`state-${colorState}`);
         }
         
         if (i === state.focusedIndex) {
@@ -221,9 +222,8 @@ function render4ModeGrids() {
             cell.textContent = state.currentInput[i] || '';
             cell.className = 'input-cell';
             
-            if (state.colorGrids[gridIdx][i]) {
-                cell.classList.add(`state-${state.colorGrids[gridIdx][i]}`);
-            }
+            const colorState = state.colorGrids[gridIdx][i] || 'x';
+            cell.classList.add(`state-${colorState}`);
         });
     }
 }
@@ -317,12 +317,12 @@ function initializeEventListeners() {
     // 清空当前输入
     document.getElementById('clearCurrent').addEventListener('click', () => {
         state.currentInput = Array(state.length).fill('');
-        state.currentStates = Array(state.length).fill('');
+        state.currentStates = Array(state.length).fill('x');
         state.colorGrids = [
-            Array(state.length).fill(''),
-            Array(state.length).fill(''),
-            Array(state.length).fill(''),
-            Array(state.length).fill('')
+            Array(state.length).fill('x'),
+            Array(state.length).fill('x'),
+            Array(state.length).fill('x'),
+            Array(state.length).fill('x')
         ];
         state.focusedIndex = 0;
         renderInputGrid();
