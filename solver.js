@@ -158,9 +158,16 @@ function buildConstraintsFromGuesses(guesses, length) {
     
     // 用于跟踪每个字符在不同猜测中的需求
     const charRequirements = {}; // ch -> [count1, count2, ...]
+    const charMaxLimits = {}; // ch -> [max1, max2, ...] 当有灰色时的上限
     
     // 遍历所有猜测
-    for (const {guess, patterns} of guesses) {
+    for (const {guess, patterns, solved} of guesses) {
+        // 跳过已解决的猜测（全绿）
+        if (solved) {
+            console.log('  跳过已解决的猜测:', guess);
+            continue;
+        }
+        
         // 对于单式模式，patterns 是字符串；4式模式是数组
         const pattern = Array.isArray(patterns) ? patterns[0] : patterns;
         
@@ -178,7 +185,7 @@ function buildConstraintsFromGuesses(guesses, length) {
             else if (pattern[i] === 'x') charColors[ch].gray++;
         }
         
-        // 记录本次猜测中每个字符的需求次数
+        // 记录本次猜测中每个字符的需求次数和上限
         for (const [ch, colors] of Object.entries(charColors)) {
             const required = colors.green + colors.yellow;
             if (required > 0) {
@@ -186,6 +193,14 @@ function buildConstraintsFromGuesses(guesses, length) {
                     charRequirements[ch] = [];
                 }
                 charRequirements[ch].push(required);
+            }
+            
+            // 如果有灰色且有绿/黄，说明有上限
+            if (colors.gray > 0 && required > 0) {
+                if (!charMaxLimits[ch]) {
+                    charMaxLimits[ch] = [];
+                }
+                charMaxLimits[ch].push(required);
             }
         }
         
@@ -210,18 +225,9 @@ function buildConstraintsFromGuesses(guesses, length) {
                 if (!hasGreenOrYellow) {
                     // 该字符完全不存在
                     constraints.excluded.add(ch);
-                } else {
-                    // 该字符存在但次数有上限
-                    const totalRequired = charColors[ch].green + charColors[ch].yellow;
-                    // 如果已有maxCounts，取最小值（更严格的约束）
-                    if (constraints.maxCounts[ch] === undefined) {
-                        constraints.maxCounts[ch] = totalRequired;
-                    } else {
-                        constraints.maxCounts[ch] = Math.min(constraints.maxCounts[ch], totalRequired);
-                    }
                 }
                 
-                // 灰色位置也禁止该字符
+                // 灰色位置也禁止该字符（如果该字符存在）
                 if (hasGreenOrYellow) {
                     if (!constraints.yellowForbiddenPositions[ch]) {
                         constraints.yellowForbiddenPositions[ch] = new Set();
@@ -235,6 +241,11 @@ function buildConstraintsFromGuesses(guesses, length) {
     // 计算最终的 requiredCounts：取所有猜测中的最大值
     for (const [ch, counts] of Object.entries(charRequirements)) {
         constraints.requiredCounts[ch] = Math.max(...counts);
+    }
+    
+    // 计算最终的 maxCounts：如果有上限约束，取最小值（最严格的）
+    for (const [ch, limits] of Object.entries(charMaxLimits)) {
+        constraints.maxCounts[ch] = Math.min(...limits);
     }
     
     return constraints;
@@ -388,20 +399,22 @@ async function generateCandidatesAsync(constraints, options) {
     async function dfs(pos, current, used, hasEqual) {
         dfsCallCount++;
         
-        // 每100次调用检查一次取消
-        if (dfsCallCount % 100 === 0) {
-            // 检查取消
-            if (cancelledRef.value) {
-                return;
-            }
+        // 每次都检查取消（最快响应）
+        if (cancelledRef.value) {
+            return;
         }
         
         // 每1000次调用让出控制权
         if (dfsCallCount % 1000 === 0) {
-            // 每100ms让出控制权，避免阻塞UI
-            if (Date.now() - lastYieldTime > 100) {
+            // 每50ms让出控制权，提高取消响应速度
+            if (Date.now() - lastYieldTime > 50) {
                 await new Promise(resolve => setTimeout(resolve, 0));
                 lastYieldTime = Date.now();
+                
+                // 再次检查取消（让出控制权后立即检查）
+                if (cancelledRef.value) {
+                    return;
+                }
                 
                 // 报告进度
                 if (onProgress) {

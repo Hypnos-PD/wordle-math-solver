@@ -236,24 +236,28 @@ function checkAndAutoApplySolved() {
     const currentGuess = state.currentInput.join('');
     if (currentGuess.length !== state.length) return;
     
-    // 查找历史中已解决的猜测
-    const solvedGuesses = state.guesses.filter(g => g.solved);
-    
-    for (const solved of solvedGuesses) {
-        if (solved.guess === currentGuess) {
-            if (state.mode4 && solved.is4Mode) {
-                // 4式模式：自动应用全绿的目标
-                const patterns = solved.patterns;
+    // 查找历史中匹配的猜测
+    for (const item of state.guesses) {
+        if (item.guess === currentGuess) {
+            if (state.mode4 && item.is4Mode) {
+                // 4式模式：检查每个目标是否全绿
+                const patterns = item.patterns;
+                let hasAutoApplied = false;
+                
                 patterns.forEach((p, idx) => {
                     if (typeof p === 'string' && p.split('').every(c => c === 'g')) {
                         state.colorGrids[idx] = Array(state.length).fill('g');
+                        hasAutoApplied = true;
                     }
                 });
-                render4ModeGrids();
-                showStatus('✓ 已自动应用已解决的颜色', 'info');
-            } else if (!state.mode4 && !solved.is4Mode) {
-                // 单式模式
-                if (typeof solved.patterns === 'string' && solved.patterns.split('').every(c => c === 'g')) {
+                
+                if (hasAutoApplied) {
+                    render4ModeGrids();
+                    showStatus('✓ 已自动应用已解决的颜色', 'info');
+                }
+            } else if (!state.mode4 && !item.is4Mode) {
+                // 单式模式：检查是否全绿
+                if (typeof item.patterns === 'string' && item.patterns.split('').every(c => c === 'g')) {
                     state.currentStates = Array(state.length).fill('g');
                     renderInputGrid();
                     showStatus('✓ 已自动应用已解决的颜色', 'info');
@@ -444,20 +448,29 @@ function addCurrentGuess() {
     }
     
     // 检测是否有全绿的模式（已解决）
+    // 注意：4式模式下，只要有一个目标全绿就提示，但不影响其他目标的搜索
     const hasAllGreen = state.mode4 
         ? patterns.some(p => p.split('').every(c => c === 'g'))
         : patterns.split('').every(c => c === 'g');
     
     if (hasAllGreen) {
-        // 如果有全绿，直接添加并标记为已解决
+        // 添加猜测（不标记为全局solved，让每个目标独立判断）
         state.guesses.push({
             guess,
             patterns,
-            is4Mode: state.mode4,
-            solved: true
+            is4Mode: state.mode4
         });
         renderHistory();
-        showStatus('✓ 已添加已解决的猜测（全绿）', 'success');
+        
+        // 提示哪些目标已解决
+        if (state.mode4) {
+            const solvedTargets = patterns
+                .map((p, idx) => p.split('').every(c => c === 'g') ? idx + 1 : null)
+                .filter(t => t !== null);
+            showStatus(`✓ 目标 ${solvedTargets.join(', ')} 已解决（全绿）`, 'success');
+        } else {
+            showStatus('✓ 已解决（全绿）', 'success');
+        }
         return;
     }
     
@@ -505,16 +518,33 @@ function renderHistory() {
         guessText.className = 'guess-text';
         guessText.textContent = item.guess;
         
-        // 如果是已解决的，添加标记
-        if (item.solved) {
-            const solvedBadge = document.createElement('span');
-            solvedBadge.className = 'solved-badge';
-            solvedBadge.textContent = '✓ 已解决';
-            solvedBadge.style.marginLeft = '8px';
-            solvedBadge.style.color = 'var(--color-green)';
-            solvedBadge.style.fontWeight = 'bold';
-            solvedBadge.style.fontSize = '0.9em';
-            guessText.appendChild(solvedBadge);
+        // 检查是否有目标已解决（全绿）
+        if (item.is4Mode && Array.isArray(item.patterns)) {
+            const solvedTargets = item.patterns
+                .map((p, i) => p.split('').every(c => c === 'g') ? i + 1 : null)
+                .filter(t => t !== null);
+            
+            if (solvedTargets.length > 0) {
+                const solvedBadge = document.createElement('span');
+                solvedBadge.className = 'solved-badge';
+                solvedBadge.textContent = `✓ 目标${solvedTargets.join(',')}已解决`;
+                solvedBadge.style.marginLeft = '8px';
+                solvedBadge.style.color = 'var(--color-green)';
+                solvedBadge.style.fontWeight = 'bold';
+                solvedBadge.style.fontSize = '0.9em';
+                guessText.appendChild(solvedBadge);
+            }
+        } else if (!item.is4Mode && typeof item.patterns === 'string') {
+            if (item.patterns.split('').every(c => c === 'g')) {
+                const solvedBadge = document.createElement('span');
+                solvedBadge.className = 'solved-badge';
+                solvedBadge.textContent = '✓ 已解决';
+                solvedBadge.style.marginLeft = '8px';
+                solvedBadge.style.color = 'var(--color-green)';
+                solvedBadge.style.fontWeight = 'bold';
+                solvedBadge.style.fontSize = '0.9em';
+                guessText.appendChild(solvedBadge);
+            }
         }
         
         div.appendChild(guessText);
@@ -610,7 +640,10 @@ async function startSearch() {
     
     // UI 更新
     document.getElementById('startSearch').style.display = 'none';
-    document.getElementById('cancelSearch').style.display = 'inline-block';
+    const cancelBtn = document.getElementById('cancelSearch');
+    cancelBtn.style.display = 'inline-block';
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '取消搜索';
     showStatus('正在搜索候选...', 'info');
     
     // 清空结果容器
@@ -635,7 +668,9 @@ async function startSearch() {
         console.error(error);
     } finally {
         document.getElementById('startSearch').style.display = 'inline-block';
-        document.getElementById('cancelSearch').style.display = 'none';
+        cancelBtn.style.display = 'none';
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = '取消搜索';
     }
 }
 
@@ -858,14 +893,47 @@ async function search4ModeAsync(startTime) {
 async function searchSingleTargetAsync(targetIdx, guesses, options) {
     console.log(`\n--- 目标 ${targetIdx + 1} ---`);
     
+    // 检查是否已经有全绿的猜测（已解决）
+    let alreadySolved = false;
+    
     const targetGuesses = guesses.map(({guess, patterns}) => {
         const pattern = Array.isArray(patterns) ? patterns[targetIdx] : patterns;
         console.log(`  猜测: ${guess}, 模式: ${pattern}`);
+        
+        // 检查该目标是否全绿（已解决）
+        const isSolved = pattern.split('').every(c => c === 'g');
+        
+        // 如果之前已经解决，后续猜测都标记为solved跳过
+        if (alreadySolved) {
+            console.log(`  → 目标已在前面解决，跳过此猜测`);
+            return {
+                guess,
+                patterns: pattern,
+                solved: true,
+                skipped: true  // 标记为跳过的
+            };
+        }
+        
+        if (isSolved) {
+            console.log(`  → 目标已解决！`);
+            alreadySolved = true;
+        }
+        
         return {
             guess,
-            patterns: pattern
+            patterns: pattern,
+            solved: isSolved  // 标记该猜测对当前目标是否已解决
         };
     });
+    
+    // 如果已解决，直接返回那个答案
+    if (alreadySolved) {
+        const solvedGuess = targetGuesses.find(g => g.solved && !g.skipped);
+        if (solvedGuess) {
+            console.log(`  目标已解决，答案: ${solvedGuess.guess}`);
+            return [solvedGuess.guess];
+        }
+    }
     
     const constraints = buildConstraintsFromGuesses(targetGuesses, options.length);
     console.log('  约束:', constraints);
@@ -934,7 +1002,13 @@ function updateTargetDisplay(targetIdx, results) {
 // 取消搜索
 function cancelSearch() {
     state.cancelledRef.value = true;
-    showStatus('正在取消...', 'warning');
+    
+    // 立即禁用取消按钮，避免重复点击
+    const cancelBtn = document.getElementById('cancelSearch');
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = '取消中...';
+    
+    showStatus('正在取消搜索...', 'warning');
 }
 
 // 复制结果到剪贴板
