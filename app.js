@@ -546,27 +546,70 @@ async function searchSingleModeAsync(startTime) {
     console.log('=== 单式模式调试 ===');
     console.log('约束:', constraints);
     
-    let allResults = [];
+    // 估算搜索空间
+    const estimatedSpace = estimateSearchSpace(constraints, state.length);
+    console.log('估算搜索空间:', estimatedSpace);
     
-    // 使用 setTimeout 分块执行，避免阻塞 UI
-    const results = await new Promise((resolve) => {
-        setTimeout(() => {
-            const res = generateCandidates(constraints, {
-                length: state.length,
-                maxResults: state.maxResults,
-                timeoutMs: 0, // 无超时
-                cancelledRef: state.cancelledRef,
-                onProgress: (partial) => {
-                    // 流式更新显示
-                    displayResultsSingleMode(partial, Date.now() - startTime, true);
-                }
-            });
-            resolve(res);
-        }, 10);
+    // 显示进度条
+    const progressDiv = document.getElementById('searchProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    progressDiv.style.display = 'block';
+    progressText.textContent = `估算搜索空间: ${estimatedSpace.toLocaleString()}`;
+    
+    // 初始化结果容器
+    const resultsContainer = document.getElementById('resultsContainer');
+    resultsContainer.innerHTML = '';
+    
+    const group = document.createElement('div');
+    group.className = 'results-group';
+    group.id = 'single-mode-results';
+    
+    const title = document.createElement('h3');
+    title.textContent = '搜索中...';
+    group.appendChild(title);
+    
+    const list = document.createElement('div');
+    list.className = 'results-list';
+    group.appendChild(list);
+    
+    resultsContainer.appendChild(group);
+    
+    // 使用异步版本
+    const results = await generateCandidatesAsync(constraints, {
+        length: state.length,
+        maxResults: state.maxResults,
+        cancelledRef: state.cancelledRef,
+        onProgress: (progress) => {
+            // 更新进度条
+            const percent = Math.min(100, (progress.explored / Math.max(estimatedSpace, 1)) * 100);
+            progressBar.style.width = percent + '%';
+            progressText.textContent = `已探索: ${progress.explored.toLocaleString()} | 已找到: ${progress.found} 个`;
+            
+            // 流式输出：每找到一个新结果就立即显示
+            if (progress.newResult) {
+                title.textContent = `已找到 ${progress.found} 个候选（搜索中...）`;
+                
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.textContent = progress.newResult;
+                item.title = '点击复制';
+                item.addEventListener('click', () => copyResultToClipboard(item));
+                list.appendChild(item);
+            }
+        }
     });
     
     console.log('搜索结果:', results);
-    displayResultsSingleMode(results, Date.now() - startTime, false);
+    progressDiv.style.display = 'none';
+    
+    // 更新最终标题
+    title.textContent = `找到 ${results.length} 个候选`;
+    
+    const meta = document.createElement('div');
+    meta.className = 'result-meta';
+    meta.textContent = `用时: ${Date.now() - startTime}ms`;
+    group.appendChild(meta);
     
     if (state.cancelledRef.value) {
         showStatus('搜索已取消，找到 ' + results.length + ' 个候选', 'warning');
@@ -577,18 +620,27 @@ async function searchSingleModeAsync(startTime) {
 
 // 4式模式异步搜索
 async function search4ModeAsync(startTime) {
-    const resultsArray = [[], [], [], []];
     const resultsContainer = document.getElementById('resultsContainer');
     resultsContainer.innerHTML = '';
     
+    // 显示进度
+    const progressDiv = document.getElementById('searchProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    progressDiv.style.display = 'block';
+    progressText.textContent = '正在同时搜索 4 个目标...';
+    
     // 创建4个目标的占位容器
+    const targetGroups = [];
+    const targetLists = [];
+    
     for (let i = 0; i < 4; i++) {
         const group = document.createElement('div');
         group.className = 'results-group';
         group.id = `target-${i}`;
         
         const title = document.createElement('h3');
-        title.textContent = `目标 ${i + 1}：搜索中...`;
+        title.textContent = `目标 ${i + 1}：准备搜索...`;
         group.appendChild(title);
         
         const list = document.createElement('div');
@@ -596,16 +648,39 @@ async function search4ModeAsync(startTime) {
         group.appendChild(list);
         
         resultsContainer.appendChild(group);
+        targetGroups.push(group);
+        targetLists.push(list);
     }
     
-    // 并行搜索4个目标
+    // 同时搜索4个目标
     const promises = [];
+    const completedCounts = [0, 0, 0, 0];
     
     for (let targetIdx = 0; targetIdx < 4; targetIdx++) {
-        const promise = searchSingleTarget(targetIdx, state.guesses, {
+        const promise = searchSingleTargetAsync(targetIdx, state.guesses, {
             length: state.length,
             maxResults: state.maxResults,
-            cancelledRef: state.cancelledRef
+            cancelledRef: state.cancelledRef,
+            onTargetProgress: (progress) => {
+                // 实时更新该目标的显示
+                const title = targetGroups[targetIdx].querySelector('h3');
+                title.textContent = `目标 ${targetIdx + 1}：已找到 ${progress.found} 个（探索: ${progress.explored.toLocaleString()}）`;
+                
+                // 流式输出：每找到一个新结果就立即显示
+                if (progress.newResult) {
+                    const item = document.createElement('div');
+                    item.className = 'result-item';
+                    item.textContent = progress.newResult;
+                    item.title = '点击复制';
+                    item.addEventListener('click', () => copyResultToClipboard(item));
+                    targetLists[targetIdx].appendChild(item);
+                    completedCounts[targetIdx] = progress.found;
+                }
+                
+                // 更新总进度条
+                const totalCompleted = completedCounts.reduce((a, b) => a + b, 0);
+                progressText.textContent = `目标1: ${completedCounts[0]} | 目标2: ${completedCounts[1]} | 目标3: ${completedCounts[2]} | 目标4: ${completedCounts[3]}`;
+            }
         });
         
         promises.push(promise);
@@ -613,47 +688,71 @@ async function search4ModeAsync(startTime) {
     
     const results = await Promise.all(promises);
     
-    // 显示最终结果
-    displayResults4Mode(results, Date.now() - startTime);
+    progressDiv.style.display = 'none';
+    
+    // 更新最终标题和元数据
+    results.forEach((candidates, idx) => {
+        const title = targetGroups[idx].querySelector('h3');
+        title.textContent = `目标 ${idx + 1}：找到 ${candidates.length} 个候选`;
+        
+        // 如果没有结果，显示提示
+        if (candidates.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'empty-hint';
+            empty.textContent = '未找到符合条件的候选';
+            targetLists[idx].innerHTML = '';
+            targetLists[idx].appendChild(empty);
+        }
+    });
+    
+    // 元数据显示在结果容器外部
+    const metaContainer = document.createElement('div');
+    metaContainer.className = 'result-meta';
+    metaContainer.textContent = `总用时: ${Date.now() - startTime}ms`;
+    metaContainer.style.marginTop = '20px';
+    resultsContainer.parentElement.insertBefore(metaContainer, resultsContainer.nextSibling);
     
     if (state.cancelledRef.value) {
         showStatus('搜索已取消', 'warning');
     } else {
-        showStatus(`搜索完成，用时 ${Date.now() - startTime}ms`, 'success');
+        const totalFound = results.reduce((sum, r) => sum + r.length, 0);
+        showStatus(`搜索完成，共找到 ${totalFound} 个候选，用时 ${Date.now() - startTime}ms`, 'success');
     }
 }
 
-// 搜索单个目标
-async function searchSingleTarget(targetIdx, guesses, options) {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            console.log(`\n--- 目标 ${targetIdx + 1} ---`);
-            
-            const targetGuesses = guesses.map(({guess, patterns}) => {
-                const pattern = Array.isArray(patterns) ? patterns[targetIdx] : patterns;
-                console.log(`  猜测: ${guess}, 模式: ${pattern}`);
-                return {
-                    guess,
-                    patterns: pattern
-                };
-            });
-            
-            const constraints = buildConstraintsFromGuesses(targetGuesses, options.length);
-            console.log('  约束:', constraints);
-            
-            const candidates = generateCandidates(constraints, {
-                ...options,
-                timeoutMs: 0,
-                onProgress: (partial) => {
-                    // 流式更新该目标的显示
-                    updateTargetDisplay(targetIdx, partial);
-                }
-            });
-            
-            console.log(`  找到 ${candidates.length} 个候选`);
-            resolve(candidates);
-        }, targetIdx * 20); // 错开启动时间
+// 搜索单个目标（异步版本）
+async function searchSingleTargetAsync(targetIdx, guesses, options) {
+    console.log(`\n--- 目标 ${targetIdx + 1} ---`);
+    
+    const targetGuesses = guesses.map(({guess, patterns}) => {
+        const pattern = Array.isArray(patterns) ? patterns[targetIdx] : patterns;
+        console.log(`  猜测: ${guess}, 模式: ${pattern}`);
+        return {
+            guess,
+            patterns: pattern
+        };
     });
+    
+    const constraints = buildConstraintsFromGuesses(targetGuesses, options.length);
+    console.log('  约束:', constraints);
+    
+    // 估算搜索空间
+    const estimatedSpace = estimateSearchSpace(constraints, options.length);
+    console.log('  估算搜索空间:', estimatedSpace);
+    
+    const candidates = await generateCandidatesAsync(constraints, {
+        ...options,
+        onProgress: (progress) => {
+            // 传递给外部的进度回调
+            if (options.onTargetProgress) {
+                options.onTargetProgress(progress);
+            }
+        }
+    });
+    
+    console.log(`  找到 ${candidates.length} 个候选`);
+    
+    return candidates;
 }
 
 // 更新单个目标的显示
@@ -688,12 +787,34 @@ function cancelSearch() {
     showStatus('正在取消...', 'warning');
 }
 
+// 复制结果到剪贴板
+function copyResultToClipboard(itemElement) {
+    const text = itemElement.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        // 视觉反馈
+        const originalClass = itemElement.className;
+        itemElement.classList.add('copied');
+        
+        setTimeout(() => {
+            itemElement.className = originalClass;
+        }, 500);
+        
+        // 不显示状态栏，避免干扰
+    }).catch(err => {
+        console.error('复制失败:', err);
+        showStatus('复制失败', 'error');
+    });
+}
+
 // 显示单式模式结果
-function displayResultsSingleMode(results, elapsed, isPartial = false) {
+function displayResultsSingleMode(results, elapsed, isPartial = false, foundCount = 0) {
     const container = document.getElementById('resultsContainer');
     container.innerHTML = '';
     
-    if (results.length === 0 && !isPartial) {
+    const actualCount = results.length || foundCount;
+    
+    if (actualCount === 0 && !isPartial) {
         container.innerHTML = '<p class="empty-hint">未找到符合条件的候选</p>';
         return;
     }
@@ -702,7 +823,7 @@ function displayResultsSingleMode(results, elapsed, isPartial = false) {
     group.className = 'results-group';
     
     const title = document.createElement('h3');
-    title.textContent = isPartial ? `已找到 ${results.length} 个候选（搜索中...）` : `找到 ${results.length} 个候选`;
+    title.textContent = isPartial ? `已找到 ${actualCount} 个候选（搜索中...）` : `找到 ${actualCount} 个候选`;
     group.appendChild(title);
     
     const list = document.createElement('div');

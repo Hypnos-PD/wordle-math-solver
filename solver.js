@@ -251,10 +251,243 @@ function scoreCandidate(expr) {
 }
 
 /**
- * DFS 生成候选等式
+ * 估算搜索空间大小
  * @param {Object} constraints - 约束对象
- * @param {Object} options - 配置 {length, maxResults, timeoutMs, cancelledRef}
- * @returns {Array} 候选等式列表
+ * @param {number} length - 等式长度
+ * @returns {number} 估算的搜索空间大小
+ */
+function estimateSearchSpace(constraints, length) {
+    const allowedChars = '0123456789+-*/='.split('').filter(ch => !constraints.excluded.has(ch));
+    let space = 1;
+    
+    for (let i = 0; i < length; i++) {
+        if (constraints.greens[i]) {
+            // 固定位置，只有1种选择
+            space *= 1;
+        } else {
+            // 估算该位置的可选字符数
+            let choices = allowedChars.length;
+            
+            // 减去被禁止的字符
+            for (const ch of allowedChars) {
+                if (constraints.yellowForbiddenPositions[ch]?.has(i)) {
+                    choices--;
+                }
+            }
+            
+            space *= Math.max(choices, 1);
+        }
+        
+        // 防止溢出，超过百万就返回
+        if (space > 1000000) return 1000000;
+    }
+    
+    return Math.floor(space);
+}
+
+/**
+ * DFS 生成候选等式（异步分块版本）
+ */
+async function generateCandidatesAsync(constraints, options) {
+    const {
+        length,
+        maxResults = 200,
+        cancelledRef = { value: false },
+        onProgress = null
+    } = options;
+    
+    const results = [];
+    const startTime = Date.now();
+    
+    // 可用字符集
+    const allowedChars = '0123456789+-*/='.split('').filter(ch => !constraints.excluded.has(ch));
+    
+    console.log('DFS 开始:');
+    console.log('  长度:', length);
+    console.log('  可用字符:', allowedChars.join(''));
+    console.log('  绿色固定:', constraints.greens);
+    console.log('  必需次数:', constraints.requiredCounts);
+    console.log('  最大次数:', constraints.maxCounts);
+    console.log('  排除字符:', Array.from(constraints.excluded).join(''));
+    console.log('  黄色禁止:', constraints.yellowForbiddenPositions);
+    
+    let dfsCallCount = 0;
+    let reachedEnd = 0;
+    let failedValidation = 0;
+    let failedRequired = 0;
+    let lastYieldTime = Date.now();
+    
+    // DFS 递归函数
+    async function dfs(pos, current, used, hasEqual) {
+        dfsCallCount++;
+        
+        // 每100次调用检查一次取消
+        if (dfsCallCount % 100 === 0) {
+            // 检查取消
+            if (cancelledRef.value) {
+                return;
+            }
+        }
+        
+        // 每1000次调用让出控制权
+        if (dfsCallCount % 1000 === 0) {
+            // 每100ms让出控制权，避免阻塞UI
+            if (Date.now() - lastYieldTime > 100) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                lastYieldTime = Date.now();
+                
+                // 报告进度
+                if (onProgress) {
+                    onProgress({
+                        found: results.length,
+                        explored: dfsCallCount,
+                        current: current
+                    });
+                }
+            }
+        }
+        
+        // 达到最大结果数
+        if (results.length >= maxResults) {
+            return;
+        }
+        
+        // 完成一个候选
+        if (pos === length) {
+            reachedEnd++;
+            
+            // 必须有等号
+            if (!hasEqual) return;
+            
+            // 验证等式
+            if (!isValidEquation(current)) {
+                failedValidation++;
+                return;
+            }
+            
+            // 检查是否满足必需次数
+            let valid = true;
+            for (const [ch, minCount] of Object.entries(constraints.requiredCounts)) {
+                if ((used[ch] || 0) < minCount) {
+                    valid = false;
+                    break;
+                }
+            }
+            
+            if (!valid) {
+                failedRequired++;
+                return;
+            }
+            
+            results.push(current);
+            console.log('  ✓ 找到候选:', current);
+            
+            // 流式回调 - 每找到一个就立即回调
+            if (onProgress) {
+                onProgress({
+                    found: results.length,
+                    explored: dfsCallCount,
+                    current: current,
+                    newResult: current
+                });
+            }
+            
+            return;
+        }
+        
+        // 如果该位置有绿色固定字符
+        if (constraints.greens[pos]) {
+            const ch = constraints.greens[pos];
+            const newUsed = { ...used };
+            newUsed[ch] = (newUsed[ch] || 0) + 1;
+            
+            // 检查是否超过最大次数
+            if (constraints.maxCounts[ch] && newUsed[ch] > constraints.maxCounts[ch]) {
+                return;
+            }
+            
+            await dfs(pos + 1, current + ch, newUsed, hasEqual || ch === '=');
+            return;
+        }
+        
+        // 尝试每个可用字符
+        for (const ch of allowedChars) {
+            // 等号限制：只能有一个，不在首末
+            if (ch === '=') {
+                if (hasEqual || pos === 0 || pos === length - 1) continue;
+                
+                // 额外检查：等号右侧必须只能放数字
+                const rightLength = length - pos - 1;
+                let needOperators = 0;
+                for (const [reqCh, minCount] of Object.entries(constraints.requiredCounts)) {
+                    if ('+-*/'.includes(reqCh)) {
+                        const currentCount = used[reqCh] || 0;
+                        if (currentCount < minCount) {
+                            needOperators += minCount - currentCount;
+                        }
+                    }
+                }
+                
+                if (needOperators > 0) {
+                    continue;
+                }
+            }
+            
+            // 运算符限制：等号之后不能放运算符
+            if (hasEqual && '+-*/'.includes(ch)) {
+                continue;
+            }
+            
+            // 检查位置禁止
+            if (constraints.yellowForbiddenPositions[ch]?.has(pos)) {
+                continue;
+            }
+            
+            // 检查次数限制
+            const newUsed = { ...used };
+            newUsed[ch] = (newUsed[ch] || 0) + 1;
+            
+            if (constraints.maxCounts[ch] && newUsed[ch] > constraints.maxCounts[ch]) {
+                continue;
+            }
+            
+            // 剪枝：检查剩余位置是否足够满足必需次数
+            const remaining = length - pos - 1;
+            let needMore = 0;
+            for (const [reqCh, minCount] of Object.entries(constraints.requiredCounts)) {
+                const currentCount = newUsed[reqCh] || 0;
+                if (currentCount < minCount) {
+                    needMore += minCount - currentCount;
+                }
+            }
+            if (needMore > remaining) {
+                continue;
+            }
+            
+            // 递归
+            await dfs(pos + 1, current + ch, newUsed, hasEqual || ch === '=');
+        }
+    }
+    
+    // 开始 DFS
+    await dfs(0, '', {}, false);
+    
+    console.log('DFS 完成:');
+    console.log('  调用次数:', dfsCallCount);
+    console.log('  到达终点:', reachedEnd);
+    console.log('  验证失败:', failedValidation);
+    console.log('  必需次数不满足:', failedRequired);
+    console.log('  找到结果:', results.length);
+    console.log('  耗时:', Date.now() - startTime, 'ms');
+    
+    // 排序
+    results.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+    
+    return results;
+}
+
+/**
+ * DFS 生成候选等式（同步版本，保留用于兼容）
  */
 function generateCandidates(constraints, options) {
     const {
