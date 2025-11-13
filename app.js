@@ -4,7 +4,6 @@
 const state = {
     length: 12,
     maxResults: 200,
-    timeout: 2000,
     mode4: false,
     currentInput: [],           // 字符数组
     currentStates: [],          // 单式模式：颜色状态数组（默认 'x'）
@@ -25,7 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeControls() {
     document.getElementById('length').value = state.length;
     document.getElementById('maxResults').value = state.maxResults;
-    document.getElementById('timeout').value = state.timeout;
     document.getElementById('mode4').checked = state.mode4;
     
     // 监听控制变化
@@ -39,10 +37,6 @@ function initializeControls() {
     
     document.getElementById('maxResults').addEventListener('change', (e) => {
         state.maxResults = parseInt(e.target.value, 10);
-    });
-    
-    document.getElementById('timeout').addEventListener('change', (e) => {
-        state.timeout = parseInt(e.target.value, 10);
     });
     
     document.getElementById('mode4').addEventListener('change', (e) => {
@@ -439,14 +433,14 @@ function renderHistory() {
             label1.className = 'pattern-label';
             label1.textContent = '目标1:';
             row1.appendChild(label1);
-            row1.appendChild(createPatternDisplay(item.patterns[0]));
+            row1.appendChild(createPatternDisplay(item.patterns[0], item.guess));
             
             const label2 = document.createElement('span');
             label2.className = 'pattern-label';
             label2.textContent = '目标2:';
             label2.style.marginLeft = '10px';
             row1.appendChild(label2);
-            row1.appendChild(createPatternDisplay(item.patterns[1]));
+            row1.appendChild(createPatternDisplay(item.patterns[1], item.guess));
             
             patterns4Mode.appendChild(row1);
             
@@ -458,21 +452,21 @@ function renderHistory() {
             label3.className = 'pattern-label';
             label3.textContent = '目标3:';
             row2.appendChild(label3);
-            row2.appendChild(createPatternDisplay(item.patterns[2]));
+            row2.appendChild(createPatternDisplay(item.patterns[2], item.guess));
             
             const label4 = document.createElement('span');
             label4.className = 'pattern-label';
             label4.textContent = '目标4:';
             label4.style.marginLeft = '10px';
             row2.appendChild(label4);
-            row2.appendChild(createPatternDisplay(item.patterns[3]));
+            row2.appendChild(createPatternDisplay(item.patterns[3], item.guess));
             
             patterns4Mode.appendChild(row2);
             
             div.appendChild(patterns4Mode);
         } else {
             // 单式模式
-            const patternDiv = createPatternDisplay(item.patterns);
+            const patternDiv = createPatternDisplay(item.patterns, item.guess);
             div.appendChild(patternDiv);
         }
         
@@ -481,16 +475,24 @@ function renderHistory() {
 }
 
 // 创建颜色模式显示
-function createPatternDisplay(pattern) {
+function createPatternDisplay(pattern, guess) {
     const div = document.createElement('div');
     div.className = 'pattern';
     
-    for (const color of pattern) {
+    for (let i = 0; i < pattern.length; i++) {
         const cell = document.createElement('div');
         cell.className = 'pattern-cell';
+        cell.textContent = guess[i] || '';
+        const color = pattern[i];
         if (color === 'g') cell.style.background = 'var(--color-green)';
         else if (color === 'y') cell.style.background = 'var(--color-yellow)';
         else cell.style.background = 'var(--color-gray)';
+        cell.style.color = 'white';
+        cell.style.fontWeight = 'bold';
+        cell.style.fontSize = '12px';
+        cell.style.display = 'flex';
+        cell.style.alignItems = 'center';
+        cell.style.justifyContent = 'center';
         div.appendChild(cell);
     }
     
@@ -512,48 +514,172 @@ async function startSearch() {
     document.getElementById('cancelSearch').style.display = 'inline-block';
     showStatus('正在搜索候选...', 'info');
     
-    // 使用 setTimeout 让 UI 有机会更新
-    setTimeout(() => {
-        try {
-            const startTime = Date.now();
-            let results;
+    // 清空结果容器
+    const resultsContainer = document.getElementById('resultsContainer');
+    resultsContainer.innerHTML = '<p class="empty-hint">搜索中，请稍候...</p>';
+    
+    const startTime = Date.now();
+    
+    try {
+        if (state.mode4) {
+            // 4 式模式
+            console.log('=== 4式模式调试 ===');
+            console.log('猜测历史:', state.guesses);
             
-            if (state.mode4) {
-                // 4 式模式
-                results = generateCandidatesFor4Mode(state.guesses, {
-                    length: state.length,
-                    maxResults: state.maxResults,
-                    timeoutMs: state.timeout,
-                    cancelledRef: state.cancelledRef
-                });
-                
-                displayResults4Mode(results, Date.now() - startTime);
-            } else {
-                // 单式模式
-                const constraints = buildConstraintsFromGuesses(state.guesses, state.length);
-                results = generateCandidates(constraints, {
-                    length: state.length,
-                    maxResults: state.maxResults,
-                    timeoutMs: state.timeout,
-                    cancelledRef: state.cancelledRef
-                });
-                
-                displayResultsSingleMode(results, Date.now() - startTime);
-            }
-            
-            if (state.cancelledRef.value) {
-                showStatus('搜索已取消', 'warning');
-            } else {
-                showStatus(`搜索完成，用时 ${Date.now() - startTime}ms`, 'success');
-            }
-        } catch (error) {
-            showStatus('搜索出错: ' + error.message, 'error');
-            console.error(error);
-        } finally {
-            document.getElementById('startSearch').style.display = 'inline-block';
-            document.getElementById('cancelSearch').style.display = 'none';
+            await search4ModeAsync(startTime);
+        } else {
+            // 单式模式
+            await searchSingleModeAsync(startTime);
         }
-    }, 50);
+    } catch (error) {
+        showStatus('搜索出错: ' + error.message, 'error');
+        console.error(error);
+    } finally {
+        document.getElementById('startSearch').style.display = 'inline-block';
+        document.getElementById('cancelSearch').style.display = 'none';
+    }
+}
+
+// 单式模式异步搜索
+async function searchSingleModeAsync(startTime) {
+    const constraints = buildConstraintsFromGuesses(state.guesses, state.length);
+    console.log('=== 单式模式调试 ===');
+    console.log('约束:', constraints);
+    
+    let allResults = [];
+    
+    // 使用 setTimeout 分块执行，避免阻塞 UI
+    const results = await new Promise((resolve) => {
+        setTimeout(() => {
+            const res = generateCandidates(constraints, {
+                length: state.length,
+                maxResults: state.maxResults,
+                timeoutMs: 0, // 无超时
+                cancelledRef: state.cancelledRef,
+                onProgress: (partial) => {
+                    // 流式更新显示
+                    displayResultsSingleMode(partial, Date.now() - startTime, true);
+                }
+            });
+            resolve(res);
+        }, 10);
+    });
+    
+    console.log('搜索结果:', results);
+    displayResultsSingleMode(results, Date.now() - startTime, false);
+    
+    if (state.cancelledRef.value) {
+        showStatus('搜索已取消，找到 ' + results.length + ' 个候选', 'warning');
+    } else {
+        showStatus(`搜索完成，找到 ${results.length} 个候选，用时 ${Date.now() - startTime}ms`, 'success');
+    }
+}
+
+// 4式模式异步搜索
+async function search4ModeAsync(startTime) {
+    const resultsArray = [[], [], [], []];
+    const resultsContainer = document.getElementById('resultsContainer');
+    resultsContainer.innerHTML = '';
+    
+    // 创建4个目标的占位容器
+    for (let i = 0; i < 4; i++) {
+        const group = document.createElement('div');
+        group.className = 'results-group';
+        group.id = `target-${i}`;
+        
+        const title = document.createElement('h3');
+        title.textContent = `目标 ${i + 1}：搜索中...`;
+        group.appendChild(title);
+        
+        const list = document.createElement('div');
+        list.className = 'results-list';
+        group.appendChild(list);
+        
+        resultsContainer.appendChild(group);
+    }
+    
+    // 并行搜索4个目标
+    const promises = [];
+    
+    for (let targetIdx = 0; targetIdx < 4; targetIdx++) {
+        const promise = searchSingleTarget(targetIdx, state.guesses, {
+            length: state.length,
+            maxResults: state.maxResults,
+            cancelledRef: state.cancelledRef
+        });
+        
+        promises.push(promise);
+    }
+    
+    const results = await Promise.all(promises);
+    
+    // 显示最终结果
+    displayResults4Mode(results, Date.now() - startTime);
+    
+    if (state.cancelledRef.value) {
+        showStatus('搜索已取消', 'warning');
+    } else {
+        showStatus(`搜索完成，用时 ${Date.now() - startTime}ms`, 'success');
+    }
+}
+
+// 搜索单个目标
+async function searchSingleTarget(targetIdx, guesses, options) {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            console.log(`\n--- 目标 ${targetIdx + 1} ---`);
+            
+            const targetGuesses = guesses.map(({guess, patterns}) => {
+                const pattern = Array.isArray(patterns) ? patterns[targetIdx] : patterns;
+                console.log(`  猜测: ${guess}, 模式: ${pattern}`);
+                return {
+                    guess,
+                    patterns: pattern
+                };
+            });
+            
+            const constraints = buildConstraintsFromGuesses(targetGuesses, options.length);
+            console.log('  约束:', constraints);
+            
+            const candidates = generateCandidates(constraints, {
+                ...options,
+                timeoutMs: 0,
+                onProgress: (partial) => {
+                    // 流式更新该目标的显示
+                    updateTargetDisplay(targetIdx, partial);
+                }
+            });
+            
+            console.log(`  找到 ${candidates.length} 个候选`);
+            resolve(candidates);
+        }, targetIdx * 20); // 错开启动时间
+    });
+}
+
+// 更新单个目标的显示
+function updateTargetDisplay(targetIdx, results) {
+    const group = document.getElementById(`target-${targetIdx}`);
+    if (!group) return;
+    
+    const title = group.querySelector('h3');
+    title.textContent = `目标 ${targetIdx + 1}：找到 ${results.length} 个候选`;
+    
+    const list = group.querySelector('.results-list');
+    list.innerHTML = '';
+    
+    if (results.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'empty-hint';
+        empty.textContent = '搜索中...';
+        list.appendChild(empty);
+    } else {
+        results.forEach(expr => {
+            const item = document.createElement('div');
+            item.className = 'result-item';
+            item.textContent = expr;
+            list.appendChild(item);
+        });
+    }
 }
 
 // 取消搜索
@@ -563,11 +689,11 @@ function cancelSearch() {
 }
 
 // 显示单式模式结果
-function displayResultsSingleMode(results, elapsed) {
+function displayResultsSingleMode(results, elapsed, isPartial = false) {
     const container = document.getElementById('resultsContainer');
     container.innerHTML = '';
     
-    if (results.length === 0) {
+    if (results.length === 0 && !isPartial) {
         container.innerHTML = '<p class="empty-hint">未找到符合条件的候选</p>';
         return;
     }
@@ -576,7 +702,7 @@ function displayResultsSingleMode(results, elapsed) {
     group.className = 'results-group';
     
     const title = document.createElement('h3');
-    title.textContent = `找到 ${results.length} 个候选`;
+    title.textContent = isPartial ? `已找到 ${results.length} 个候选（搜索中...）` : `找到 ${results.length} 个候选`;
     group.appendChild(title);
     
     const list = document.createElement('div');
@@ -591,10 +717,12 @@ function displayResultsSingleMode(results, elapsed) {
     
     group.appendChild(list);
     
-    const meta = document.createElement('div');
-    meta.className = 'result-meta';
-    meta.textContent = `用时: ${elapsed}ms`;
-    group.appendChild(meta);
+    if (!isPartial) {
+        const meta = document.createElement('div');
+        meta.className = 'result-meta';
+        meta.textContent = `用时: ${elapsed}ms`;
+        group.appendChild(meta);
+    }
     
     container.appendChild(group);
 }

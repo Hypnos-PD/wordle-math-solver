@@ -155,6 +155,9 @@ function buildConstraintsFromGuesses(guesses, length) {
         yellowForbiddenPositions: {}
     };
     
+    // 用于跟踪每个字符在不同猜测中的需求
+    const charRequirements = {}; // ch -> [count1, count2, ...]
+    
     // 遍历所有猜测
     for (const {guess, patterns} of guesses) {
         // 对于单式模式，patterns 是字符串；4式模式是数组
@@ -174,6 +177,17 @@ function buildConstraintsFromGuesses(guesses, length) {
             else if (pattern[i] === 'x') charColors[ch].gray++;
         }
         
+        // 记录本次猜测中每个字符的需求次数
+        for (const [ch, colors] of Object.entries(charColors)) {
+            const required = colors.green + colors.yellow;
+            if (required > 0) {
+                if (!charRequirements[ch]) {
+                    charRequirements[ch] = [];
+                }
+                charRequirements[ch].push(required);
+            }
+        }
+        
         // 处理每个字符
         for (let i = 0; i < guess.length; i++) {
             const ch = guess[i];
@@ -182,12 +196,8 @@ function buildConstraintsFromGuesses(guesses, length) {
             if (color === 'g') {
                 // 绿色：该位置固定
                 constraints.greens[i] = ch;
-                // 增加必需次数
-                constraints.requiredCounts[ch] = (constraints.requiredCounts[ch] || 0) + 1;
             } else if (color === 'y') {
-                // 黄色：字符存在但不在此位置
-                constraints.requiredCounts[ch] = (constraints.requiredCounts[ch] || 0) + 1;
-                // 该位置禁止该字符
+                // 黄色：该位置禁止该字符
                 if (!constraints.yellowForbiddenPositions[ch]) {
                     constraints.yellowForbiddenPositions[ch] = new Set();
                 }
@@ -202,7 +212,12 @@ function buildConstraintsFromGuesses(guesses, length) {
                 } else {
                     // 该字符存在但次数有上限
                     const totalRequired = charColors[ch].green + charColors[ch].yellow;
-                    constraints.maxCounts[ch] = totalRequired;
+                    // 如果已有maxCounts，取最小值（更严格的约束）
+                    if (constraints.maxCounts[ch] === undefined) {
+                        constraints.maxCounts[ch] = totalRequired;
+                    } else {
+                        constraints.maxCounts[ch] = Math.min(constraints.maxCounts[ch], totalRequired);
+                    }
                 }
                 
                 // 灰色位置也禁止该字符
@@ -214,6 +229,11 @@ function buildConstraintsFromGuesses(guesses, length) {
                 }
             }
         }
+    }
+    
+    // 计算最终的 requiredCounts：取所有猜测中的最大值
+    for (const [ch, counts] of Object.entries(charRequirements)) {
+        constraints.requiredCounts[ch] = Math.max(...counts);
     }
     
     return constraints;
@@ -240,8 +260,9 @@ function generateCandidates(constraints, options) {
     const {
         length,
         maxResults = 200,
-        timeoutMs = 2000,
-        cancelledRef = { value: false }
+        timeoutMs = 0, // 0 表示无超时
+        cancelledRef = { value: false },
+        onProgress = null // 流式回调
     } = options;
     
     const results = [];
@@ -250,10 +271,31 @@ function generateCandidates(constraints, options) {
     // 可用字符集
     const allowedChars = '0123456789+-*/='.split('').filter(ch => !constraints.excluded.has(ch));
     
+    console.log('DFS 开始:');
+    console.log('  长度:', length);
+    console.log('  可用字符:', allowedChars.join(''));
+    console.log('  绿色固定:', constraints.greens);
+    console.log('  必需次数:', constraints.requiredCounts);
+    console.log('  最大次数:', constraints.maxCounts);
+    console.log('  排除字符:', Array.from(constraints.excluded).join(''));
+    console.log('  黄色禁止:', constraints.yellowForbiddenPositions);
+    
+    let dfsCallCount = 0;
+    let reachedEnd = 0;
+    let failedValidation = 0;
+    let failedRequired = 0;
+    
     // DFS 递归函数
     function dfs(pos, current, used, hasEqual) {
-        // 检查超时和取消
-        if (cancelledRef.value || Date.now() - startTime > timeoutMs) {
+        dfsCallCount++;
+        
+        // 检查取消
+        if (cancelledRef.value) {
+            return;
+        }
+        
+        // 检查超时（如果设置了）
+        if (timeoutMs > 0 && Date.now() - startTime > timeoutMs) {
             return;
         }
         
@@ -264,24 +306,47 @@ function generateCandidates(constraints, options) {
         
         // 完成一个候选
         if (pos === length) {
+            reachedEnd++;
+            
             // 必须有等号
             if (!hasEqual) return;
             
             // 验证等式
-            if (isValidEquation(current)) {
-                // 检查是否满足必需次数
-                let valid = true;
-                for (const [ch, minCount] of Object.entries(constraints.requiredCounts)) {
-                    if ((used[ch] || 0) < minCount) {
-                        valid = false;
-                        break;
-                    }
+            if (!isValidEquation(current)) {
+                failedValidation++;
+                if (reachedEnd <= 10) {
+                    console.log('  验证失败:', current);
                 }
-                
-                if (valid) {
-                    results.push(current);
+                return;
+            }
+            
+            // 检查是否满足必需次数
+            let valid = true;
+            for (const [ch, minCount] of Object.entries(constraints.requiredCounts)) {
+                if ((used[ch] || 0) < minCount) {
+                    valid = false;
+                    break;
                 }
             }
+            
+            if (!valid) {
+                failedRequired++;
+                if (reachedEnd <= 10) {
+                    console.log('  未满足必需次数:', current, used);
+                }
+                return;
+            }
+            
+            results.push(current);
+            if (results.length <= 5) {
+                console.log('  ✓ 找到候选:', current);
+            }
+            
+            // 流式回调
+            if (onProgress && results.length % 10 === 0) {
+                onProgress(results.slice());
+            }
+            
             return;
         }
         
@@ -305,6 +370,29 @@ function generateCandidates(constraints, options) {
             // 等号限制：只能有一个，不在首末
             if (ch === '=') {
                 if (hasEqual || pos === 0 || pos === length - 1) continue;
+                
+                // 额外检查：等号右侧必须只能放数字
+                // 检查剩余位置是否只能放数字（没有运算符需求）
+                const rightLength = length - pos - 1;
+                let needOperators = 0;
+                for (const [reqCh, minCount] of Object.entries(constraints.requiredCounts)) {
+                    if ('+-*/'.includes(reqCh)) {
+                        const currentCount = used[reqCh] || 0;
+                        if (currentCount < minCount) {
+                            needOperators += minCount - currentCount;
+                        }
+                    }
+                }
+                
+                // 如果还需要运算符，但等号之后没有足够空间，跳过
+                if (needOperators > 0) {
+                    continue;
+                }
+            }
+            
+            // 运算符限制：等号之后不能放运算符
+            if (hasEqual && '+-*/'.includes(ch)) {
+                continue;
             }
             
             // 检查位置禁止
@@ -341,6 +429,14 @@ function generateCandidates(constraints, options) {
     // 开始 DFS
     dfs(0, '', {}, false);
     
+    console.log('DFS 完成:');
+    console.log('  调用次数:', dfsCallCount);
+    console.log('  到达终点:', reachedEnd);
+    console.log('  验证失败:', failedValidation);
+    console.log('  必需次数不满足:', failedRequired);
+    console.log('  找到结果:', results.length);
+    console.log('  耗时:', Date.now() - startTime, 'ms');
+    
     // 排序
     results.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
     
@@ -356,15 +452,27 @@ function generateCandidates(constraints, options) {
 function generateCandidatesFor4Mode(guesses, options) {
     const results = [];
     
+    console.log('=== 4式模式生成 ===');
+    console.log('总猜测数:', guesses.length);
+    
     for (let targetIdx = 0; targetIdx < 4; targetIdx++) {
+        console.log(`\n--- 目标 ${targetIdx + 1} ---`);
+        
         // 为每个目标构建独立约束
-        const targetGuesses = guesses.map(({guess, patterns}) => ({
-            guess,
-            patterns: patterns[targetIdx]
-        }));
+        const targetGuesses = guesses.map(({guess, patterns}) => {
+            const pattern = Array.isArray(patterns) ? patterns[targetIdx] : patterns;
+            console.log(`  猜测: ${guess}, 模式: ${pattern}`);
+            return {
+                guess,
+                patterns: pattern
+            };
+        });
         
         const constraints = buildConstraintsFromGuesses(targetGuesses, options.length);
+        console.log('  约束:', constraints);
+        
         const candidates = generateCandidates(constraints, options);
+        console.log(`  找到 ${candidates.length} 个候选`);
         
         results.push(candidates);
     }
