@@ -1,0 +1,445 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --color-bg: #f5f5f5;
+    --color-card: #ffffff;
+    --color-border: #ddd;
+    --color-primary: #6aaa64;
+    --color-secondary: #787c7e;
+    --color-danger: #dc3545;
+    --color-text: #333;
+    --color-text-light: #666;
+    
+    /* Wordle 颜色 */
+    --color-green: #6aaa64;
+    --color-yellow: #c9b458;
+    --color-gray: #787c7e;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.6;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+header h1 {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    color: var(--color-primary);
+}
+
+.subtitle {
+    color: var(--color-text-light);
+    font-size: 0.95rem;
+}
+
+section {
+    background: var(--color-card);
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+h2 {
+    font-size: 1.3rem;
+    margin-bottom: 15px;
+    color: var(--color-text);
+}
+
+/* 控制区 */
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.control-group label {
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.control-group input[type="number"] {
+    width: 80px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.checkbox-group label {
+    cursor: pointer;
+    user-select: none;
+}
+
+.checkbox-group input[type="checkbox"] {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+/* 输入格子 */
+.input-container {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+    justify-content: center;
+}
+
+.input-cell {
+    width: 50px;
+    height: 50px;
+    border: 2px solid var(--color-border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+    background: white;
+}
+
+.input-cell:hover {
+    border-color: var(--color-primary);
+    transform: scale(1.05);
+}
+
+.input-cell.state-x {
+    background: var(--color-gray);
+    color: white;
+    border-color: var(--color-gray);
+}
+
+.input-cell.state-y {
+    background: var(--color-yellow);
+    color: white;
+    border-color: var(--color-yellow);
+}
+
+.input-cell.state-g {
+    background: var(--color-green);
+    color: white;
+    border-color: var(--color-green);
+}
+
+.input-cell.focused {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* 4式模式颜色网格 */
+.color-grids-container {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px dashed var(--color-border);
+}
+
+.color-grid {
+    margin-bottom: 15px;
+}
+
+.color-grid label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--color-text-light);
+}
+
+.color-grid .grid-cells {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.color-grid .input-cell {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+}
+
+/* 按钮 */
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    background: var(--color-primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5a9a54;
+}
+
+.btn-secondary {
+    background: var(--color-secondary);
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #686c6e;
+}
+
+.btn-danger {
+    background: var(--color-danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.btn-large {
+    padding: 12px 30px;
+    font-size: 1.1rem;
+}
+
+/* 历史记录 */
+.history-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: var(--color-bg);
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.history-item .guess-text {
+    font-weight: bold;
+    min-width: 150px;
+}
+
+.history-item .pattern {
+    display: flex;
+    gap: 2px;
+}
+
+.history-item .pattern-cell {
+    width: 20px;
+    height: 20px;
+    border-radius: 2px;
+}
+
+.history-item .pattern-label {
+    font-size: 0.85rem;
+    color: var(--color-text-light);
+    margin-right: 5px;
+}
+
+/* 状态栏 */
+.status-bar {
+    margin-top: 15px;
+    padding: 12px;
+    border-radius: 4px;
+    font-weight: 500;
+    text-align: center;
+    display: none;
+}
+
+.status-bar.show {
+    display: block;
+}
+
+.status-bar.info {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.status-bar.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-bar.warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-bar.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* 结果容器 */
+.results-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.results-group {
+    margin-bottom: 20px;
+}
+
+.results-group h3 {
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    color: var(--color-primary);
+}
+
+.results-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+}
+
+.result-item {
+    padding: 8px 12px;
+    background: var(--color-bg);
+    border-radius: 4px;
+    text-align: center;
+    font-family: monospace;
+    font-weight: 600;
+    border: 1px solid var(--color-border);
+}
+
+.result-meta {
+    margin-top: 10px;
+    font-size: 0.9rem;
+    color: var(--color-text-light);
+}
+
+/* 空提示 */
+.empty-hint {
+    text-align: center;
+    color: var(--color-text-light);
+    font-style: italic;
+    padding: 20px;
+}
+
+/* 帮助区 */
+.help-section details {
+    cursor: pointer;
+}
+
+.help-section summary {
+    font-weight: 600;
+    font-size: 1.1rem;
+    padding: 10px;
+    background: var(--color-bg);
+    border-radius: 4px;
+    user-select: none;
+}
+
+.help-section summary:hover {
+    background: #e8e8e8;
+}
+
+.help-content {
+    margin-top: 15px;
+}
+
+.help-content h3 {
+    font-size: 1rem;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    color: var(--color-primary);
+}
+
+.help-content ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.help-content li {
+    padding: 5px 0;
+    padding-left: 20px;
+    position: relative;
+}
+
+.help-content li::before {
+    content: "▸";
+    position: absolute;
+    left: 0;
+    color: var(--color-primary);
+}
+
+.color-demo {
+    display: inline-block;
+    width: 30px;
+    height: 20px;
+    border-radius: 3px;
+    text-align: center;
+    line-height: 20px;
+    font-weight: bold;
+    font-size: 0.8rem;
+    vertical-align: middle;
+}
+
+/* 响应式 */
+@media (max-width: 600px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .input-cell {
+        width: 40px;
+        height: 40px;
+        font-size: 1.2rem;
+    }
+    
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .control-group {
+        justify-content: space-between;
+    }
+}
