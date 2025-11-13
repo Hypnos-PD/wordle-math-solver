@@ -248,6 +248,30 @@ function buildConstraintsFromGuesses(guesses, length) {
         constraints.maxCounts[ch] = Math.min(...limits);
     }
     
+    // 【关键修正】减去已被绿色位置占用的字符数
+    // greens 中固定的字符已经满足了部分 requiredCounts，不应重复计算
+    const greenCounts = {};
+    for (const ch of constraints.greens) {
+        if (ch) {
+            greenCounts[ch] = (greenCounts[ch] || 0) + 1;
+        }
+    }
+    
+    for (const ch in greenCounts) {
+        if (constraints.requiredCounts[ch] !== undefined) {
+            // 减去绿色已占用的次数
+            constraints.requiredCounts[ch] = Math.max(0, constraints.requiredCounts[ch] - greenCounts[ch]);
+        }
+    }
+    
+    // 【关键修正】移除被要求出现的字符（避免排除与需求冲突）
+    // 如果字符在 requiredCounts 中（意味着某个猜测中有绿/黄），就不应该被排除
+    for (const ch in constraints.requiredCounts) {
+        if (constraints.requiredCounts[ch] > 0 || greenCounts[ch] > 0) {
+            constraints.excluded.delete(ch);
+        }
+    }
+    
     return constraints;
 }
 
