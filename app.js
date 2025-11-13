@@ -555,6 +555,7 @@ async function searchSingleModeAsync(startTime) {
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
     progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
     progressText.textContent = `估算搜索空间: ${estimatedSpace.toLocaleString()}`;
     
     // 初始化结果容器
@@ -580,11 +581,12 @@ async function searchSingleModeAsync(startTime) {
         length: state.length,
         maxResults: state.maxResults,
         cancelledRef: state.cancelledRef,
+        estimatedSpace: estimatedSpace, // 传入估算空间
         onProgress: (progress) => {
-            // 更新进度条
+            // 更新进度条 - 根据估算空间计算真实百分比
             const percent = Math.min(100, (progress.explored / Math.max(estimatedSpace, 1)) * 100);
-            progressBar.style.width = percent + '%';
-            progressText.textContent = `已探索: ${progress.explored.toLocaleString()} | 已找到: ${progress.found} 个`;
+            progressBar.style.width = percent.toFixed(1) + '%';
+            progressText.textContent = `进度: ${percent.toFixed(1)}% | 已探索: ${progress.explored.toLocaleString()} | 已找到: ${progress.found} 个`;
             
             // 流式输出：每找到一个新结果就立即显示
             if (progress.newResult) {
@@ -601,7 +603,15 @@ async function searchSingleModeAsync(startTime) {
     });
     
     console.log('搜索结果:', results);
-    progressDiv.style.display = 'none';
+    
+    // 搜索完成，强制进度条到100%
+    progressBar.style.width = '100%';
+    progressText.textContent = `完成 | 已探索完毕 | 找到: ${results.length} 个`;
+    
+    // 短暂延迟后隐藏进度条
+    setTimeout(() => {
+        progressDiv.style.display = 'none';
+    }, 1000);
     
     // 更新最终标题
     title.textContent = `找到 ${results.length} 个候选`;
@@ -623,12 +633,18 @@ async function search4ModeAsync(startTime) {
     const resultsContainer = document.getElementById('resultsContainer');
     resultsContainer.innerHTML = '';
     
-    // 显示进度
-    const progressDiv = document.getElementById('searchProgress');
-    const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-    progressDiv.style.display = 'block';
-    progressText.textContent = '正在同时搜索 4 个目标...';
+    // 显示4式进度条
+    const progressDiv4 = document.getElementById('searchProgress4');
+    progressDiv4.style.display = 'grid';
+    
+    // 初始化所有进度条
+    for (let i = 0; i < 4; i++) {
+        const progressItem = progressDiv4.querySelector(`[data-target="${i}"]`);
+        const progressBar = progressItem.querySelector('.progress-bar');
+        const progressText = progressItem.querySelector('.progress-text');
+        progressBar.style.width = '0%';
+        progressText.textContent = '准备搜索...';
+    }
     
     // 创建4个目标的占位容器
     const targetGroups = [];
@@ -662,9 +678,29 @@ async function search4ModeAsync(startTime) {
             maxResults: state.maxResults,
             cancelledRef: state.cancelledRef,
             onTargetProgress: (progress) => {
+                // 更新该目标的进度条
+                const progressItem = progressDiv4.querySelector(`[data-target="${targetIdx}"]`);
+                const progressBar = progressItem.querySelector('.progress-bar');
+                const progressText = progressItem.querySelector('.progress-text');
+                
+                // 如果搜索完成，强制设为100%
+                if (progress.completed) {
+                    progressBar.style.width = '100%';
+                    progressText.textContent = `100% | 找到: ${progress.found}`;
+                } else {
+                    // 根据估算空间计算真实百分比
+                    const percent = Math.min(100, (progress.explored / Math.max(progress.estimatedSpace || 1, 1)) * 100);
+                    progressBar.style.width = percent.toFixed(1) + '%';
+                    progressText.textContent = `${percent.toFixed(1)}% | 找到: ${progress.found}`;
+                }
+                
                 // 实时更新该目标的显示
                 const title = targetGroups[targetIdx].querySelector('h3');
-                title.textContent = `目标 ${targetIdx + 1}：已找到 ${progress.found} 个（探索: ${progress.explored.toLocaleString()}）`;
+                if (progress.completed) {
+                    title.textContent = `目标 ${targetIdx + 1}：找到 ${progress.found} 个候选`;
+                } else {
+                    title.textContent = `目标 ${targetIdx + 1}：已找到 ${progress.found} 个（探索: ${progress.explored.toLocaleString()}）`;
+                }
                 
                 // 流式输出：每找到一个新结果就立即显示
                 if (progress.newResult) {
@@ -676,10 +712,6 @@ async function search4ModeAsync(startTime) {
                     targetLists[targetIdx].appendChild(item);
                     completedCounts[targetIdx] = progress.found;
                 }
-                
-                // 更新总进度条
-                const totalCompleted = completedCounts.reduce((a, b) => a + b, 0);
-                progressText.textContent = `目标1: ${completedCounts[0]} | 目标2: ${completedCounts[1]} | 目标3: ${completedCounts[2]} | 目标4: ${completedCounts[3]}`;
             }
         });
         
@@ -688,7 +720,10 @@ async function search4ModeAsync(startTime) {
     
     const results = await Promise.all(promises);
     
-    progressDiv.style.display = 'none';
+    // 短暂延迟后隐藏进度条，让用户看到100%完成
+    setTimeout(() => {
+        progressDiv4.style.display = 'none';
+    }, 1000);
     
     // 更新最终标题和元数据
     results.forEach((candidates, idx) => {
@@ -742,15 +777,31 @@ async function searchSingleTargetAsync(targetIdx, guesses, options) {
     
     const candidates = await generateCandidatesAsync(constraints, {
         ...options,
+        estimatedSpace: estimatedSpace, // 传入估算空间
         onProgress: (progress) => {
-            // 传递给外部的进度回调
+            // 传递给外部的进度回调，添加估算空间信息
             if (options.onTargetProgress) {
-                options.onTargetProgress(progress);
+                options.onTargetProgress({
+                    ...progress,
+                    estimatedSpace: estimatedSpace,
+                    targetIdx: targetIdx
+                });
             }
         }
     });
     
     console.log(`  找到 ${candidates.length} 个候选`);
+    
+    // 搜索完成后，通知进度条设为100%
+    if (options.onTargetProgress) {
+        options.onTargetProgress({
+            found: candidates.length,
+            explored: estimatedSpace,
+            estimatedSpace: estimatedSpace,
+            targetIdx: targetIdx,
+            completed: true
+        });
+    }
     
     return candidates;
 }

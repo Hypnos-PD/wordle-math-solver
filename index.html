@@ -82,12 +82,47 @@
                 <button id="startSearch" class="btn btn-primary btn-large">🔍 开始搜索候选</button>
                 <button id="cancelSearch" class="btn btn-danger" style="display: none;">取消搜索</button>
             </div>
+            
+            <!-- 单式模式进度条 -->
             <div id="searchProgress" class="search-progress" style="display: none;">
                 <div class="progress-bar-container">
                     <div id="progressBar" class="progress-bar"></div>
                 </div>
                 <div id="progressText" class="progress-text"></div>
             </div>
+            
+            <!-- 4式模式进度条 -->
+            <div id="searchProgress4" class="search-progress-4" style="display: none;">
+                <div class="progress-item" data-target="0">
+                    <label>目标 1：</label>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div class="progress-text"></div>
+                </div>
+                <div class="progress-item" data-target="1">
+                    <label>目标 2：</label>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div class="progress-text"></div>
+                </div>
+                <div class="progress-item" data-target="2">
+                    <label>目标 3：</label>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div class="progress-text"></div>
+                </div>
+                <div class="progress-item" data-target="3">
+                    <label>目标 4：</label>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div class="progress-text"></div>
+                </div>
+            </div>
+            
             <div id="statusBar" class="status-bar"></div>
         </section>
 
