@@ -104,14 +104,15 @@ function checkPatternConsistency(guess, patterns, existingConstraints) {
             }
         }
         
-        // 检查黄色禁止位置
+        // 检查黄色禁止位置（该字符曾在此位置被标记为黄色，说明答案中该字符不在此位置）
         if (existingConstraints.yellowForbiddenPositions[ch]?.has(i)) {
-            if (color === 'y' || color === 'g') {
+            if (color === 'g') {
                 return { 
                     valid: false, 
-                    error: `字符 '${ch}' 在位置 ${i+1} 已被禁止，不应标记为黄色或绿色` 
+                    error: `字符 '${ch}' 在位置 ${i+1} 已被禁止（之前标记为黄色），不应标记为绿色` 
                 };
             }
+            // 黄色是允许的（再次确认该字符不在此位置）
         }
     }
     
