@@ -318,6 +318,72 @@ async function generateCandidatesAsync(constraints, options) {
     let failedRequired = 0;
     let lastYieldTime = Date.now();
     
+    /**
+     * 动态排序字符 - 根据当前状态计算每个字符的优先级
+     */
+    function getSortedChars(pos, used, hasEqual) {
+        const chars = [];
+        
+        for (const ch of allowedChars) {
+            // 基本过滤
+            if (ch === '=') {
+                if (hasEqual || pos === 0 || pos === length - 1) continue;
+            }
+            if (hasEqual && '+-*/'.includes(ch)) continue;
+            if (constraints.yellowForbiddenPositions[ch]?.has(pos)) continue;
+            
+            const currentUsed = used[ch] || 0;
+            if (constraints.maxCounts[ch] && currentUsed >= constraints.maxCounts[ch]) continue;
+            
+            // 计算优先级分数（越高越优先）
+            let priority = 0;
+            
+            // 1. 必需字符优先（还没用够的）
+            if (constraints.requiredCounts[ch]) {
+                const needed = constraints.requiredCounts[ch] - currentUsed;
+                if (needed > 0) {
+                    priority += needed * 1000; // 非常高的优先级
+                }
+            }
+            
+            // 2. 数字优先于运算符
+            if (/\d/.test(ch)) {
+                priority += 100;
+            }
+            
+            // 3. 等号在合适位置（长度的40-60%位置）
+            if (ch === '=') {
+                const idealPos = length * 0.5;
+                const distance = Math.abs(pos - idealPos);
+                priority += Math.max(0, 50 - distance * 5); // 离理想位置越近越好
+            }
+            
+            // 4. 避免运算符在开头
+            if ('+-*/'.includes(ch) && pos < 2) {
+                priority -= 50;
+            }
+            
+            // 5. 常用数字（0-9）略微提高优先级
+            if ('0123456789'.includes(ch)) {
+                // 1, 2, 0 更常见
+                if (ch === '1') priority += 5;
+                else if (ch === '2') priority += 4;
+                else if (ch === '0') priority += 3;
+            }
+            
+            // 6. 常用运算符优先
+            if (ch === '+' || ch === '-') priority += 10;
+            if (ch === '*' || ch === '/') priority += 5;
+            
+            chars.push({ ch, priority });
+        }
+        
+        // 按优先级降序排序
+        chars.sort((a, b) => b.priority - a.priority);
+        
+        return chars.map(item => item.ch);
+    }
+    
     // DFS 递归函数
     async function dfs(pos, current, used, hasEqual) {
         dfsCallCount++;
@@ -411,14 +477,13 @@ async function generateCandidatesAsync(constraints, options) {
             return;
         }
         
-        // 尝试每个可用字符
-        for (const ch of allowedChars) {
-            // 等号限制：只能有一个，不在首末
+        // 动态获取排序后的字符列表（根据当前状态）
+        const sortedChars = getSortedChars(pos, used, hasEqual);
+        
+        // 按优先级尝试每个字符
+        for (const ch of sortedChars) {
+            // 等号特殊检查：右侧必须只能放数字
             if (ch === '=') {
-                if (hasEqual || pos === 0 || pos === length - 1) continue;
-                
-                // 额外检查：等号右侧必须只能放数字
-                const rightLength = length - pos - 1;
                 let needOperators = 0;
                 for (const [reqCh, minCount] of Object.entries(constraints.requiredCounts)) {
                     if ('+-*/'.includes(reqCh)) {
@@ -432,16 +497,6 @@ async function generateCandidatesAsync(constraints, options) {
                 if (needOperators > 0) {
                     continue;
                 }
-            }
-            
-            // 运算符限制：等号之后不能放运算符
-            if (hasEqual && '+-*/'.includes(ch)) {
-                continue;
-            }
-            
-            // 检查位置禁止
-            if (constraints.yellowForbiddenPositions[ch]?.has(pos)) {
-                continue;
             }
             
             // 检查次数限制
