@@ -476,15 +476,89 @@ function addCurrentGuess() {
     
     // 检查颜色反馈是否与已有约束矛盾
     if (state.guesses.length > 0) {
-        // 构建已有约束
-        const existingConstraints = buildConstraintsFromGuesses(state.guesses, state.length);
+        // 【改进】自动修正已知绿色位置，而不是直接报错
+        let autoFixed = false;
         
-        // 检查一致性
-        const checkResult = checkPatternConsistency(guess, patterns, existingConstraints);
-        
-        if (!checkResult.valid) {
-            showStatus('约束冲突: ' + checkResult.error, 'error');
-            return;
+        if (state.mode4) {
+            // 4式模式：为每个目标分别构建约束并修正
+            patterns.forEach((pattern, targetIdx) => {
+                // 为该目标单独构建约束
+                const targetGuesses = state.guesses.map(g => ({
+                    guess: g.guess,
+                    patterns: g.is4Mode ? g.patterns[targetIdx] : g.patterns,
+                    solved: g.is4Mode && g.patterns[targetIdx] && g.patterns[targetIdx].split('').every(c => c === 'g')
+                }));
+                
+                const targetConstraints = buildConstraintsFromGuesses(targetGuesses, state.length);
+                const patternArray = pattern.split('');
+                
+                for (let i = 0; i < guess.length; i++) {
+                    const ch = guess[i];
+                    
+                    // 如果该位置已固定，且当前猜测匹配，自动改为绿色
+                    if (targetConstraints.greens[i] && targetConstraints.greens[i] === ch) {
+                        if (patternArray[i] !== 'g') {
+                            patternArray[i] = 'g';
+                            autoFixed = true;
+                        }
+                    }
+                }
+                
+                patterns[targetIdx] = patternArray.join('');
+                state.colorGrids[targetIdx] = patternArray;
+            });
+            
+            if (autoFixed) {
+                render4ModeGrids();
+                showStatus('⚠ 已自动修正部分已知绿色位置', 'warning');
+            }
+            
+            // 再次检查每个目标的一致性
+            for (let targetIdx = 0; targetIdx < patterns.length; targetIdx++) {
+                const targetGuesses = state.guesses.map(g => ({
+                    guess: g.guess,
+                    patterns: g.is4Mode ? g.patterns[targetIdx] : g.patterns,
+                    solved: g.is4Mode && g.patterns[targetIdx] && g.patterns[targetIdx].split('').every(c => c === 'g')
+                }));
+                
+                const targetConstraints = buildConstraintsFromGuesses(targetGuesses, state.length);
+                const checkResult = checkPatternConsistency(guess, patterns[targetIdx], targetConstraints);
+                
+                if (!checkResult.valid) {
+                    showStatus(`目标${targetIdx + 1}约束冲突: ${checkResult.error}`, 'error');
+                    return;
+                }
+            }
+        } else {
+            // 单式模式
+            const existingConstraints = buildConstraintsFromGuesses(state.guesses, state.length);
+            const patternArray = patterns.split('');
+            
+            for (let i = 0; i < guess.length; i++) {
+                const ch = guess[i];
+                
+                if (existingConstraints.greens[i] && existingConstraints.greens[i] === ch) {
+                    if (patternArray[i] !== 'g') {
+                        patternArray[i] = 'g';
+                        autoFixed = true;
+                    }
+                }
+            }
+            
+            if (autoFixed) {
+                patterns = patternArray.join('');
+                state.currentStates = patternArray;
+                renderInputGrid();
+                showStatus('⚠ 已自动修正部分已知绿色位置', 'warning');
+            }
+            
+            // 再次检查一致性
+            const checkResult = checkPatternConsistency(guess, patterns, existingConstraints);
+            
+            if (!checkResult.valid) {
+                showStatus('约束冲突: ' + checkResult.error + '（请检查颜色标记）', 'error');
+                return;
+            }
         }
     }
     
