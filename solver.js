@@ -345,7 +345,9 @@ async function generateCandidatesAsync(constraints, options) {
     console.log('  必需次数:', constraints.requiredCounts);
     console.log('  最大次数:', constraints.maxCounts);
     console.log('  排除字符:', Array.from(constraints.excluded).join(''));
-    console.log('  黄色禁止:', constraints.yellowForbiddenPositions);
+    console.log('  黄色禁止:', Object.fromEntries(
+        Object.entries(constraints.yellowForbiddenPositions).map(([k, v]) => [k, Array.from(v)])
+    ));
     
     let dfsCallCount = 0;
     let reachedEnd = 0;
@@ -364,7 +366,8 @@ async function generateCandidatesAsync(constraints, options) {
             if (ch === '=') {
                 if (hasEqual || pos === 0 || pos === length - 1) continue;
             }
-            if (hasEqual && '+-*/'.includes(ch)) continue;
+            // 【修正】等号后只禁止 *、/、+，允许负号 -
+            if (hasEqual && '*/+'.includes(ch)) continue;
             if (constraints.yellowForbiddenPositions[ch]?.has(pos)) continue;
             
             const currentUsed = used[ch] || 0;
@@ -502,6 +505,15 @@ async function generateCandidatesAsync(constraints, options) {
         // 如果该位置有绿色固定字符
         if (constraints.greens[pos]) {
             const ch = constraints.greens[pos];
+            
+            // 【关键剪枝】等号前不能是运算符
+            if (ch === '=') {
+                const lastChar = pos > 0 ? current[pos - 1] : null;
+                if (lastChar && '+-*/'.includes(lastChar)) {
+                    return; // 剪枝：等号前是运算符，这条路径无效
+                }
+            }
+            
             const newUsed = { ...used };
             newUsed[ch] = (newUsed[ch] || 0) + 1;
             
@@ -519,8 +531,29 @@ async function generateCandidatesAsync(constraints, options) {
         
         // 按优先级尝试每个字符
         for (const ch of sortedChars) {
+            // 【关键剪枝】避免连续运算符（除了负号开头或运算符后的负号）
+            const lastChar = pos > 0 ? current[pos - 1] : null;
+            if ('+-*/'.includes(ch) && lastChar) {
+                // 如果上一个字符是运算符或等号
+                if ('+-*/='.includes(lastChar)) {
+                    // 只允许负号（-）跟在 = 或其他运算符后
+                    if (ch !== '-') {
+                        continue; // 跳过 *、/、+ 在运算符后
+                    }
+                    // 如果上一个已经是负号，不能再跟负号（避免 --）
+                    if (lastChar === '-' && ch === '-') {
+                        continue;
+                    }
+                }
+            }
+            
             // 等号特殊检查：右侧必须只能放数字
             if (ch === '=') {
+                // 【关键剪枝】等号前不能是运算符（左侧表达式必须完整）
+                if (lastChar && '+-*/'.includes(lastChar)) {
+                    continue;
+                }
+                
                 let needOperators = 0;
                 for (const [reqCh, minCount] of Object.entries(constraints.requiredCounts)) {
                     if ('+-*/'.includes(reqCh)) {
@@ -534,6 +567,11 @@ async function generateCandidatesAsync(constraints, options) {
                 if (needOperators > 0) {
                     continue;
                 }
+            }
+            
+            // 【关键剪枝】等号后不能是运算符（除了负号）
+            if (hasEqual && '*/+'.includes(ch)) {
+                continue;
             }
             
             // 检查次数限制
@@ -679,6 +717,15 @@ function generateCandidates(constraints, options) {
         // 如果该位置有绿色固定字符
         if (constraints.greens[pos]) {
             const ch = constraints.greens[pos];
+            
+            // 【关键剪枝】等号前不能是运算符
+            if (ch === '=') {
+                const lastChar = pos > 0 ? current[pos - 1] : null;
+                if (lastChar && '+-*/'.includes(lastChar)) {
+                    return; // 剪枝：等号前是运算符，这条路径无效
+                }
+            }
+            
             const newUsed = { ...used };
             newUsed[ch] = (newUsed[ch] || 0) + 1;
             
@@ -693,8 +740,26 @@ function generateCandidates(constraints, options) {
         
         // 尝试每个可用字符
         for (const ch of allowedChars) {
+            // 【关键剪枝】避免连续运算符（除了负号）
+            const lastChar = pos > 0 ? current[pos - 1] : null;
+            if ('+-*/'.includes(ch) && lastChar) {
+                if ('+-*/='.includes(lastChar)) {
+                    if (ch !== '-') {
+                        continue;
+                    }
+                    if (lastChar === '-' && ch === '-') {
+                        continue;
+                    }
+                }
+            }
+            
             // 等号限制：只能有一个，不在首末
             if (ch === '=') {
+                // 【关键剪枝】等号前不能是运算符
+                if (lastChar && '+-*/'.includes(lastChar)) {
+                    continue;
+                }
+                
                 if (hasEqual || pos === 0 || pos === length - 1) continue;
                 
                 // 额外检查：等号右侧必须只能放数字
@@ -716,8 +781,8 @@ function generateCandidates(constraints, options) {
                 }
             }
             
-            // 运算符限制：等号之后不能放运算符
-            if (hasEqual && '+-*/'.includes(ch)) {
+            // 【修正】等号后只禁止 *、/、+，允许负号 -
+            if (hasEqual && '*/+'.includes(ch)) {
                 continue;
             }
             
