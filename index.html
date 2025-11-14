@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wordle 数学等式筛选器</title>
     <link rel="stylesheet" href="style.css" />
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   </head>
   <body>
     <div class="container">
@@ -192,6 +194,23 @@
           <button id="importState" class="btn btn-secondary">
             📥 导入状态
           </button>
+          <button id="importFromImage" class="btn btn-secondary">
+            🖼️ 从图片识别
+          </button>
+          <button id="importFromClipboard" class="btn btn-secondary">
+            📋 从剪贴板识别
+          </button>
+        </div>
+        
+        <!-- 隐藏的文件输入 -->
+        <input type="file" id="imageFileInput" accept="image/*" style="display: none;" />
+        
+        <!-- OCR 进度显示 -->
+        <div id="ocrProgress" class="ocr-progress" style="display: none;">
+          <div class="ocr-status"></div>
+          <div class="progress-bar-container">
+            <div class="progress-bar"></div>
+          </div>
         </div>
       </section>
 
@@ -233,6 +252,7 @@
     </div>
 
     <script src="solver.js"></script>
+    <script src="image-ocr.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -621,6 +621,69 @@ function addCurrentGuess() {
 }
 
 // 自动应用已解决的模式（全绿）
+// 检测历史记录中的冲突
+function detectConflicts(guesses) {
+  const conflicts = new Array(guesses.length).fill(false);
+  
+  for (let i = 0; i < guesses.length; i++) {
+    const item = guesses[i];
+    
+    if (item.is4Mode) {
+      // 4式模式：检查每个目标的冲突
+      for (let targetIdx = 0; targetIdx < 4; targetIdx++) {
+        const pattern = item.patterns[targetIdx];
+        if (hasPatternConflict(item.guess, pattern, guesses, i, targetIdx)) {
+          conflicts[i] = true;
+          break;
+        }
+      }
+    } else {
+      // 单式模式
+      if (hasPatternConflict(item.guess, item.patterns, guesses, i)) {
+        conflicts[i] = true;
+      }
+    }
+  }
+  
+  return conflicts;
+}
+
+// 检查单个模式是否有冲突
+function hasPatternConflict(guess, pattern, allGuesses, currentIdx, targetIdx = null) {
+  // 提取绿色位置
+  const greens = {};
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === 'g') {
+      greens[i] = guess[i];
+    }
+  }
+  
+  // 与其他历史记录比较绿色位置
+  for (let i = 0; i < allGuesses.length; i++) {
+    if (i === currentIdx) continue;
+    
+    const other = allGuesses[i];
+    let otherPattern;
+    
+    if (targetIdx !== null && other.is4Mode) {
+      otherPattern = other.patterns[targetIdx];
+    } else if (targetIdx === null && !other.is4Mode) {
+      otherPattern = other.patterns;
+    } else {
+      continue; // 模式不匹配，跳过
+    }
+    
+    // 检查绿色位置冲突
+    for (let pos in greens) {
+      if (otherPattern[pos] === 'g' && other.guess[pos] !== greens[pos]) {
+        return true; // 发现冲突
+      }
+    }
+  }
+  
+  return false;
+}
+
 // 渲染历史记录
 function renderHistory() {
   const container = document.getElementById("historyList");
@@ -631,14 +694,76 @@ function renderHistory() {
   }
 
   container.innerHTML = "";
+  
+  // 检测冲突
+  const conflicts = detectConflicts(state.guesses);
 
   state.guesses.forEach((item, idx) => {
     const div = document.createElement("div");
     div.className = "history-item";
+    if (conflicts[idx]) {
+      div.classList.add("has-conflict");
+      div.title = "检测到冲突：绿色位置与其他记录不一致";
+    }
 
-    const guessText = document.createElement("span");
-    guessText.className = "guess-text";
-    guessText.textContent = item.guess;
+    // 第一行：可编辑的等式输入 + 删除按钮
+    const headerRow = document.createElement("div");
+    headerRow.style.display = "flex";
+    headerRow.style.alignItems = "center";
+    headerRow.style.justifyContent = "space-between";
+    headerRow.style.width = "100%";
+
+    const guessInput = document.createElement("div");
+    guessInput.className = "guess-text";
+    guessInput.contentEditable = true;
+    guessInput.textContent = item.guess;
+    guessInput.style.outline = "none";
+    guessInput.style.border = "1px solid transparent";
+    guessInput.style.padding = "4px 8px";
+    guessInput.style.borderRadius = "4px";
+    guessInput.style.cursor = "text";
+    guessInput.style.flex = "1";
+    
+    // 输入限制
+    guessInput.addEventListener("input", (e) => {
+      let text = e.target.textContent;
+      text = text.replace(/[^0-9+\-*/=]/g, ""); // 只保留有效字符
+      if (text.length > state.length) {
+        text = text.substring(0, state.length);
+      }
+      if (e.target.textContent !== text) {
+        e.target.textContent = text;
+        // 恢复光标位置到末尾
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(e.target);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+    
+    // 失焦时更新状态并重新验证
+    guessInput.addEventListener("blur", (e) => {
+      const newGuess = e.target.textContent.trim();
+      if (newGuess.length === state.length && newGuess !== item.guess) {
+        item.guess = newGuess;
+        renderHistory(); // 重新渲染以检测冲突
+      } else if (newGuess.length !== state.length) {
+        e.target.textContent = item.guess; // 恢复原值
+        showStatus(`等式长度必须为 ${state.length} 位`, "warning");
+      }
+    });
+    
+    guessInput.addEventListener("focus", (e) => {
+      e.target.style.border = "1px solid var(--color-primary)";
+      e.target.style.background = "rgba(59, 130, 246, 0.05)";
+    });
+    
+    guessInput.addEventListener("blur", (e) => {
+      e.target.style.border = "1px solid transparent";
+      e.target.style.background = "transparent";
+    });
 
     // 检查是否有目标已解决（全绿）
     if (item.is4Mode && Array.isArray(item.patterns)) {
@@ -654,7 +779,7 @@ function renderHistory() {
         solvedBadge.style.color = "var(--color-green)";
         solvedBadge.style.fontWeight = "bold";
         solvedBadge.style.fontSize = "0.9em";
-        guessText.appendChild(solvedBadge);
+        guessInput.appendChild(solvedBadge);
       }
     } else if (!item.is4Mode && typeof item.patterns === "string") {
       if (item.patterns.split("").every((c) => c === "g")) {
@@ -665,12 +790,35 @@ function renderHistory() {
         solvedBadge.style.color = "var(--color-green)";
         solvedBadge.style.fontWeight = "bold";
         solvedBadge.style.fontSize = "0.9em";
-        guessText.appendChild(solvedBadge);
+        guessInput.appendChild(solvedBadge);
       }
     }
 
-    div.appendChild(guessText);
+    // 添加删除按钮到第一行
+    const deleteBtn = document.createElement("button");
+    deleteBtn.textContent = "×";
+    deleteBtn.className = "delete-history-btn";
+    deleteBtn.style.background = "var(--color-red)";
+    deleteBtn.style.color = "white";
+    deleteBtn.style.border = "none";
+    deleteBtn.style.borderRadius = "50%";
+    deleteBtn.style.width = "28px";
+    deleteBtn.style.height = "28px";
+    deleteBtn.style.cursor = "pointer";
+    deleteBtn.style.fontSize = "20px";
+    deleteBtn.style.lineHeight = "1";
+    deleteBtn.style.flexShrink = "0";
+    deleteBtn.title = "删除此记录";
+    deleteBtn.addEventListener("click", () => {
+      state.guesses.splice(idx, 1);
+      renderHistory();
+    });
 
+    headerRow.appendChild(guessInput);
+    headerRow.appendChild(deleteBtn);
+    div.appendChild(headerRow);
+
+    // 下方：颜色模式显示
     if (item.is4Mode) {
       // 4 式模式：显示 4 组颜色，分两行
       const patterns4Mode = document.createElement("div");
@@ -684,14 +832,14 @@ function renderHistory() {
       label1.className = "pattern-label";
       label1.textContent = "目标1:";
       row1.appendChild(label1);
-      row1.appendChild(createPatternDisplay(item.patterns[0], item.guess));
+      row1.appendChild(createEditablePatternDisplay(item.patterns[0], item, 0, idx));
 
       const label2 = document.createElement("span");
       label2.className = "pattern-label";
       label2.textContent = "目标2:";
       label2.style.marginLeft = "10px";
       row1.appendChild(label2);
-      row1.appendChild(createPatternDisplay(item.patterns[1], item.guess));
+      row1.appendChild(createEditablePatternDisplay(item.patterns[1], item, 1, idx));
 
       patterns4Mode.appendChild(row1);
 
@@ -703,21 +851,21 @@ function renderHistory() {
       label3.className = "pattern-label";
       label3.textContent = "目标3:";
       row2.appendChild(label3);
-      row2.appendChild(createPatternDisplay(item.patterns[2], item.guess));
+      row2.appendChild(createEditablePatternDisplay(item.patterns[2], item, 2, idx));
 
       const label4 = document.createElement("span");
       label4.className = "pattern-label";
       label4.textContent = "目标4:";
       label4.style.marginLeft = "10px";
       row2.appendChild(label4);
-      row2.appendChild(createPatternDisplay(item.patterns[3], item.guess));
+      row2.appendChild(createEditablePatternDisplay(item.patterns[3], item, 3, idx));
 
       patterns4Mode.appendChild(row2);
 
       div.appendChild(patterns4Mode);
     } else {
       // 单式模式
-      const patternDiv = createPatternDisplay(item.patterns, item.guess);
+      const patternDiv = createEditablePatternDisplay(item.patterns, item, null, idx);
       div.appendChild(patternDiv);
     }
 
@@ -725,7 +873,81 @@ function renderHistory() {
   });
 }
 
-// 创建颜色模式显示
+// 创建可编辑的颜色模式显示
+function createEditablePatternDisplay(pattern, item, targetIdx, historyIdx) {
+  const div = document.createElement("div");
+  div.className = "pattern";
+
+  for (let i = 0; i < pattern.length; i++) {
+    const cell = document.createElement("div");
+    cell.className = "pattern-cell";
+    cell.textContent = item.guess[i] || "";
+    const color = pattern[i];
+    if (color === "g") cell.style.background = "var(--color-green)";
+    else if (color === "y") cell.style.background = "var(--color-yellow)";
+    else cell.style.background = "var(--color-gray)";
+    cell.style.color = "white";
+    cell.style.fontWeight = "bold";
+    cell.style.fontSize = "14px"; // 增大字体
+    cell.style.display = "flex";
+    cell.style.alignItems = "center";
+    cell.style.justifyContent = "center";
+    
+    // 添加点击切换颜色（与主输入逻辑一致）
+    cell.addEventListener("click", () => {
+      // 切换颜色 x → y → g → x
+      let currentColor = pattern[i];
+      let newColor;
+      if (currentColor === 'x') newColor = 'y';
+      else if (currentColor === 'y') newColor = 'g';
+      else newColor = 'x';
+      
+      // 更新数据
+      if (item.is4Mode && targetIdx !== null) {
+        const patternArr = item.patterns[targetIdx].split('');
+        patternArr[i] = newColor;
+        item.patterns[targetIdx] = patternArr.join('');
+      } else {
+        const patternArr = item.patterns.split('');
+        patternArr[i] = newColor;
+        item.patterns = patternArr.join('');
+      }
+      
+      // 重新渲染
+      renderHistory();
+    });
+    
+    // 右键逆向切换 x → g → y → x
+    cell.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      let currentColor = pattern[i];
+      let newColor;
+      if (currentColor === 'x') newColor = 'g';
+      else if (currentColor === 'g') newColor = 'y';
+      else newColor = 'x';
+      
+      // 更新数据
+      if (item.is4Mode && targetIdx !== null) {
+        const patternArr = item.patterns[targetIdx].split('');
+        patternArr[i] = newColor;
+        item.patterns[targetIdx] = patternArr.join('');
+      } else {
+        const patternArr = item.patterns.split('');
+        patternArr[i] = newColor;
+        item.patterns = patternArr.join('');
+      }
+      
+      // 重新渲染
+      renderHistory();
+    });
+    
+    div.appendChild(cell);
+  }
+
+  return div;
+}
+
+// 创建颜色模式显示（只读，保留用于导出等场景）
 function createPatternDisplay(pattern, guess) {
   const div = document.createElement("div");
   div.className = "pattern";
@@ -1388,4 +1610,88 @@ function importState() {
     showStatus("导入失败: " + error.message, "error");
     console.error(error);
   }
+}
+
+// ==================== 图片识别功能 ====================
+
+// 从文件导入图片
+document.getElementById('importFromImage').addEventListener('click', () => {
+    document.getElementById('imageFileInput').click();
+});
+
+document.getElementById('imageFileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    await processImageFile(file);
+    
+    // 清空文件输入，允许重复选择同一文件
+    e.target.value = '';
+});
+
+// 从剪贴板导入图片
+document.getElementById('importFromClipboard').addEventListener('click', async () => {
+    try {
+        showOCRProgress('读取剪贴板...', 0);
+        const imageBlob = await getImageFromClipboard();
+        await processImageFile(imageBlob);
+    } catch (error) {
+        hideOCRProgress();
+        showStatus('剪贴板导入失败: ' + error.message, 'error');
+        console.error(error);
+    }
+});
+
+// 处理图片文件
+async function processImageFile(file) {
+    try {
+        showOCRProgress('准备识别...', 0);
+        
+        const gameState = await extractGameStateFromImage(file, (status, progress) => {
+            showOCRProgress(status, progress);
+        });
+        
+        // 应用识别结果
+        state.length = gameState.length;
+        state.mode4 = gameState.mode4;
+        state.guesses = gameState.guesses;
+        
+        // 更新界面
+        document.getElementById('length').value = state.length;
+        document.getElementById('mode4').checked = state.mode4;
+        
+        initializeInputGrid();
+        toggleMode4Display();
+        renderInputGrid();
+        if (state.mode4) render4ModeGrids();
+        renderHistory();
+        
+        hideOCRProgress();
+        showStatus(`✅ 识别成功！导入了 ${state.guesses.length} 个猜测`, 'success');
+        
+        console.log('\n🎉 最终状态:', state);
+        
+    } catch (error) {
+        hideOCRProgress();
+        showStatus('图片识别失败: ' + error.message, 'error');
+        console.error(error);
+    }
+}
+
+// 显示 OCR 进度
+function showOCRProgress(status, progress) {
+    const progressDiv = document.getElementById('ocrProgress');
+    const statusText = progressDiv.querySelector('.ocr-status');
+    const progressBar = progressDiv.querySelector('.progress-bar');
+    
+    progressDiv.style.display = 'block';
+    statusText.textContent = status;
+    progressBar.style.width = `${(progress * 100).toFixed(0)}%`;
+}
+
+// 隐藏 OCR 进度
+function hideOCRProgress() {
+    setTimeout(() => {
+        document.getElementById('ocrProgress').style.display = 'none';
+    }, 1000);
 }
